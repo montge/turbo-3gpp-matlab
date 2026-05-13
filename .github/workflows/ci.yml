@@ -42,6 +42,23 @@ jobs:
             fprintf('MULTI-SEGMENT NOISE-FREE PASS\n');
           "
 
+  tests:
+    name: MOxUnit test suite on Octave
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Octave
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --fix-missing octave
+          octave --version | head -1
+
+      - name: Run MOxUnit test suite
+        run: scripts/run_tests.sh
+
   openspec:
     name: Validate OpenSpec changes and specs
     runs-on: ubuntu-latest
