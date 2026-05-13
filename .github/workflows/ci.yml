@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  octave:
+    name: Octave smoke + multi-segment round trip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Octave
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --fix-missing octave
+          octave --version | head -1
+
+      - name: Single-segment smoke test (A=16, G=132, C=1)
+        run: octave --no-gui test_octave_smoke.m
+
+      - name: Multi-segment round trip (A=8000, G=24000, C=2)
+        run: |
+          octave --no-gui --eval "
+            warning('off', 'all');
+            addpath(pwd);
+            rand('state', 42);
+            A = 8000; G = 24000;
+            hEnc = turbo_encoding_chain('A', A, 'G', G, 'Q_m', 2);
+            hDec = turbo_decoding_chain('A', A, 'G', G, 'Q_m', 2, 'iterations', 8);
+            assert(hEnc.C == 2, sprintf('expected C=2, got %d', hEnc.C));
+            assert(isequal(hEnc.E_r, hDec.E_r), 'encoder and decoder disagree on E_r');
+            a = double(rand(1, A) > 0.5);
+            f = step(hEnc, a);
+            assert(length(f) == G, sprintf('encoded length %d != G=%d', length(f), G));
+            f_llr = 1 - 2 * f;
+            a_hat = step(hDec, f_llr);
+            assert(~isempty(a_hat), 'decoder returned empty (CRC failed)');
+            assert(isequal(a, a_hat), sprintf('round-trip mismatch: %d bit errors', sum(a ~= a_hat)));
+            fprintf('MULTI-SEGMENT NOISE-FREE PASS\n');
+          "
+
+  openspec:
+    name: Validate OpenSpec changes and specs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Validate all OpenSpec items (strict)
+        run: npx openspec validate --all --strict
