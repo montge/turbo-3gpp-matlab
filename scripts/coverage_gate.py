@@ -59,7 +59,12 @@ def main() -> int:
         if not lines:
             continue
         total = len(lines)
-        covered = sum(1 for ln in lines if int(ln.attrib.get("hits", "0")) > 0)
+        try:
+            covered = sum(1 for ln in lines if int(ln.attrib.get("hits", "0")) > 0)
+        except ValueError as exc:
+            print(f"ERROR: malformed `hits` attribute in {filename}: {exc}",
+                  file=sys.stderr)
+            return 2
         files.append((filename, covered, total))
 
     if not files:
@@ -95,12 +100,14 @@ def main() -> int:
     summary_path.write_text(summary)
     sys.stdout.write(summary)
 
-    # `math.isclose` with abs_tol scaled to one-line worth of percentage absorbs
-    # round-off symmetrically. e.g. for total_lines=474 the per-line contribution
-    # is ~0.21 %, so abs_tol = half of one-line keeps the boundary unambiguous
-    # while still rejecting genuine misses.
-    per_line_pct = 100.0 / total_lines if total_lines else 0.0
-    abs_tol = max(per_line_pct / 2.0, 1e-9)
+    # Tolerance around the gate boundary. The intent is solely to absorb
+    # floating-point round-off in pct = 100*covered/total, not to widen the
+    # gate. 1e-6 percentage points is six orders of magnitude larger than any
+    # plausible FP error and six orders of magnitude smaller than the smallest
+    # coverage delta a reviewer would care about, so a flat cap is safer than
+    # scaling by per-line contribution (which would be ~5 % for a 10-line
+    # report and effectively disable the gate).
+    abs_tol = 1e-6
     if pct < threshold and not math.isclose(pct, threshold, abs_tol=abs_tol):
         print(f"\nFAIL: line coverage {pct:.2f}% is below the {threshold:.2f}% "
               f"threshold. Largest contributors to the uncovered set are listed "

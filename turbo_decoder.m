@@ -51,6 +51,11 @@ end
 if length(pi) ~= K
     error('turbo_decoder:pi_length_mismatch', 'length of pi does not match K');
 end
+if ~isnumeric(max_iterations) || ~isscalar(max_iterations) ...
+        || ~isreal(max_iterations) || ~isfinite(max_iterations)
+    error('turbo_decoder:iterations_invalid', ...
+        'iterations must be a real, finite numeric scalar');
+end
 if max_iterations ~= round(2*max_iterations)/2
     error('turbo_decoder:iterations_not_half_multiple', ...
         'iterations must be a multiple of 0.5');
