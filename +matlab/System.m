@@ -43,7 +43,6 @@ classdef System < handle
         function varargout = step(obj, varargin)
             if ~obj.is_setup_done
                 setupImpl(obj);
-                processTunedPropertiesImpl(obj);
                 obj.is_setup_done = true;
             end
             n_out = max(1, nargout);
@@ -52,6 +51,15 @@ classdef System < handle
         end
 
         function reset(obj)
+            % Match step()'s lazy-setup semantics. Without this, calling
+            % reset(obj) before any step(obj, ...) would dispatch to a
+            % subclass resetImpl that may reference properties populated by
+            % setupImpl (turbo_decoding_chain.resetImpl reads obj.buffers,
+            % which setupImpl allocates).
+            if ~obj.is_setup_done
+                setupImpl(obj);
+                obj.is_setup_done = true;
+            end
             resetImpl(obj);
         end
 
