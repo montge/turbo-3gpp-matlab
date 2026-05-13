@@ -5,11 +5,12 @@
 The system SHALL provide a test suite that runs unmodified on both MATLAB (R2020a+) and GNU Octave (8.4+) via a vendored copy of [MOxUnit](https://github.com/MOxUnit/MOxUnit) under `tests/MOxUnit/`. The vendored MOxUnit SHALL be pinned to an explicit commit SHA (recorded in `tests/MOxUnit/VERSION` or a git submodule reference) so test behavior is reproducible across runs.
 
 #### Scenario: Test suite runs on Octave
-- **WHEN** `octave --no-gui --eval "addpath(genpath('tests/MOxUnit')); moxunit_runtests('tests', '-recursive', '-verbose')"` is invoked at the repository root
-- **THEN** all discovered tests execute and the call returns exit code 0 on success, non-zero on any failure
+- **WHEN** `scripts/run_tests.sh` (which adds `tests/MOxUnit/MOxUnit` to the path, calls `moxunit_set_path()`, and invokes `moxunit_runtests('tests', 'tests/property', '-verbose')`) is run at the repository root
+- **THEN** all discovered tests under `tests/` and `tests/property/` execute and the script returns exit code 0 on success, non-zero on any failure
+- **AND** the vendored MOxUnit submodule at `tests/MOxUnit/` is NOT picked up by discovery (it is excluded from the explicit dir list because MOxUnit's own self-tests assume an independent bootstrap)
 
 #### Scenario: Test suite runs on MATLAB
-- **WHEN** the same MOxUnit `moxunit_runtests` invocation is run from a MATLAB session
+- **WHEN** the same `moxunit_runtests('tests', 'tests/property', '-verbose')` call is issued from a MATLAB session (with `tests/MOxUnit/MOxUnit` on the path)
 - **THEN** the discovered test set is identical (same file count, same scenario count) and all tests pass
 
 #### Scenario: MOxUnit version is pinned
