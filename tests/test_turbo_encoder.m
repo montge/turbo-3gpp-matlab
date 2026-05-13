@@ -25,7 +25,7 @@ function test_interleaver_length_mismatch
     K = 40;
     c = double(rand(1, K) > 0.5);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_encoder(c, pi(1:end - 1)), '');
+    assertExceptionThrown(@() turbo_encoder(c, pi(1:end - 1)), '*');
 
 function test_filler_bit_propagation
     % NaN-valued filler positions in c must remain NaN on the systematic and

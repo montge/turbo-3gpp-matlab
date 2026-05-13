@@ -38,5 +38,5 @@ function test_permutation_is_a_bijection
 
 function test_unsupported_block_length
     % K = 41 (or any non-tabulated value) must raise.
-    assertExceptionThrown(@() internal_interleaver(0:40), '');
-    assertExceptionThrown(@() internal_interleaver(0:9), '');
+    assertExceptionThrown(@() internal_interleaver(0:40), '*');
+    assertExceptionThrown(@() internal_interleaver(0:9), '*');

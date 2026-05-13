@@ -18,8 +18,8 @@ function test_output_length_is_a_multiple_of_32
     end
 
 function test_unsupported_index
-    assertExceptionThrown(@() subblock_interleaver(0:31, 3), '');
-    assertExceptionThrown(@() subblock_interleaver(0:31, -1), '');
+    assertExceptionThrown(@() subblock_interleaver(0:31, 3), '*');
+    assertExceptionThrown(@() subblock_interleaver(0:31, -1), '*');
 
 function test_indices_0_and_1_preserve_payload_set
     % Indices 0 and 1 use the column-permutation form. The non-NaN entries

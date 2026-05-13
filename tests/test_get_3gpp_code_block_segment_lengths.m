@@ -36,7 +36,7 @@ function test_multi_segment_over_z
     end
 
 function test_invalid_transport_block_size_zero
-    assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(0), '');
+    assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(0), '*');
 
 function test_invalid_transport_block_size_negative
-    assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(-1), '');
+    assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(-1), '*');

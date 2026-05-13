@@ -72,7 +72,10 @@ classdef turbo_decoding_chain < turbo_coding_chain
         end
         
         function [a, iterations_performed] = stepImpl(obj, f)
-            
+            if length(f) ~= obj.G
+                error('turbo_decoding_chain:wrong_length_input', ...
+                    'Expected length(f) = G = %d, got %d.', obj.G, length(f));
+            end
             e_r = code_block_deconcatenation(f, obj.E_r);
             
             iterations_performed = zeros(1,obj.C);

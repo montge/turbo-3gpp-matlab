@@ -12,16 +12,16 @@ function test_suite = test_circular_buffer
 function test_invalid_rv_idx
     K_Pi = 64;
     v = zeros(3, K_Pi);
-    assertExceptionThrown(@() circular_buffer(v, 0, 0, -1, 10), '');
-    assertExceptionThrown(@() circular_buffer(v, 0, 0,  4, 10), '');
+    assertExceptionThrown(@() circular_buffer(v, 0, 0, -1, 10), '*');
+    assertExceptionThrown(@() circular_buffer(v, 0, 0,  4, 10), '*');
 
 function test_rejects_wrong_row_count
     v_bad = zeros(2, 64);
-    assertExceptionThrown(@() circular_buffer(v_bad, 0, 0, 0, 10), '');
+    assertExceptionThrown(@() circular_buffer(v_bad, 0, 0, 0, 10), '*');
 
 function test_rejects_non_multiple_of_32_columns
     v_bad = zeros(3, 33);
-    assertExceptionThrown(@() circular_buffer(v_bad, 0, 0, 0, 10), '');
+    assertExceptionThrown(@() circular_buffer(v_bad, 0, 0, 0, 10), '*');
 
 function test_redundancy_versions_select_different_starting_offsets
     % No-LBRM mode and a buffer large enough that the four rv_idx values

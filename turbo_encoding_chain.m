@@ -8,7 +8,7 @@
 %   the specified Value. You can specify additional name-value pair
 %   arguments in any order as (Name1,Value1,...,NameN,ValueN).
 %
-%   Copyright © 2018 Robert G. Maunder. This program is free software: you 
+%   Copyright ï¿½ 2018 Robert G. Maunder. This program is free software: you 
 %   can redistribute it and/or modify it under the terms of the GNU General 
 %   Public License as published by the Free Software Foundation, either 
 %   version 3 of the License, or (at your option) any later version. This 
@@ -39,9 +39,13 @@ classdef turbo_encoding_chain < turbo_coding_chain
         % release(a);
         % step(a); % <- stepImpl executed here
         function f = stepImpl(obj, a)
+            if length(a) ~= obj.A
+                error('turbo_encoding_chain:wrong_length_input', ...
+                    'Expected length(a) = A = %d, got %d.', obj.A, length(a));
+            end
             e_r = cell(1,obj.C);
 
-            
+
             b = generate_and_append_crc_bits(a,obj.CRC_generator_matrix_TB);
             c_r = code_block_segmentation(b,obj.K_r,obj.CRC_generator_matrix_CB);            
             for r=0:obj.C-1

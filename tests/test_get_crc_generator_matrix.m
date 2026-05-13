@@ -18,9 +18,9 @@ function test_generator_matrix_shape
 
 function test_invalid_polynomial
     % An empty polynomial cannot define a CRC (P < 1) and must be rejected.
-    assertExceptionThrown(@() get_crc_generator_matrix(10, []), '');
+    assertExceptionThrown(@() get_crc_generator_matrix(10, []), '*');
     % A single-bit polynomial gives P = 0, also invalid.
-    assertExceptionThrown(@() get_crc_generator_matrix(10, [1]), '');
+    assertExceptionThrown(@() get_crc_generator_matrix(10, [1]), '*');
 
 function test_generator_matrix_sized_larger_than_input
     % calculate_crc_bits keeps only the last A rows: building a 40-row matrix

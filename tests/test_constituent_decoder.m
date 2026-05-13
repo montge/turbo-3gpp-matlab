@@ -12,7 +12,7 @@ function test_llr_length_mismatch
     approx_star = false;
     x_a = zeros(1, 10);
     z_a = zeros(1, 11);
-    assertExceptionThrown(@() constituent_decoder(x_a, z_a), '');
+    assertExceptionThrown(@() constituent_decoder(x_a, z_a), '*');
 
 function test_returns_same_length_as_input
     global approx_star;

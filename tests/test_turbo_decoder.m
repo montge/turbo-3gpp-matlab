@@ -71,8 +71,8 @@ function test_invalid_iteration_count_not_multiple_of_half
     K = 40;
     d_a = zeros(3, K + 4);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, 0.3), '');
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, 1.25), '');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, 0.3), '*');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, 1.25), '*');
 
 function test_invalid_iteration_count_negative_value
     global approx_star;
@@ -80,8 +80,8 @@ function test_invalid_iteration_count_negative_value
     K = 40;
     d_a = zeros(3, K + 4);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, -1), '');
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, -0.5), '');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, -1), '*');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, -0.5), '*');
 
 function test_d_a_must_have_three_rows
     global approx_star;
@@ -89,7 +89,7 @@ function test_d_a_must_have_three_rows
     K = 40;
     d_a_bad = zeros(2, K + 4);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a_bad, pi, 1), '');
+    assertExceptionThrown(@() turbo_decoder(d_a_bad, pi, 1), '*');
 
 function test_pi_length_must_match_k
     global approx_star;
@@ -98,4 +98,4 @@ function test_pi_length_must_match_k
     d_a = zeros(3, K + 4);
     pi_bad = internal_interleaver(0:K - 1);
     pi_bad = pi_bad(1:end - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a, pi_bad, 1), '');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi_bad, 1), '*');

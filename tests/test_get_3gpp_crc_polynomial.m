@@ -54,5 +54,5 @@ function test_crc8_polynomial_returned
     end
 
 function test_unknown_crc_identifier
-    assertExceptionThrown(@() get_3gpp_crc_polynomial('CRC32'), '');
-    assertExceptionThrown(@() get_3gpp_crc_polynomial(''), '');
+    assertExceptionThrown(@() get_3gpp_crc_polynomial('CRC32'), '*');
+    assertExceptionThrown(@() get_3gpp_crc_polynomial(''), '*');

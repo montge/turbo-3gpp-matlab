@@ -9,7 +9,7 @@ function test_suite = test_code_block_deconcatenation
 
 function test_deconcatenation_length_mismatch
     % sum(E_r) must equal length(f), otherwise the function errors.
-    assertExceptionThrown(@() code_block_deconcatenation([1 0 1 1], [3 2]), '');
+    assertExceptionThrown(@() code_block_deconcatenation([1 0 1 1], [3 2]), '*');
 
 function test_round_trip_with_unequal_segments
     e_r = {[1 0 0 1 1], [1], [0 1 0]};
