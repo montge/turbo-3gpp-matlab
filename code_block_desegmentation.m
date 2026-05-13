@@ -27,7 +27,7 @@ function b = code_block_desegmentation(c_r,B,G_max)
 %   b will be a row vector comprising B transport block bits.
 %
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you 
+% Copyright Â© 2018 Robert G. Maunder. This program is free software: you 
 % can redistribute it and/or modify it under the terms of the GNU General 
 % Public License as published by the Free Software Foundation, either 
 % version 3 of the License, or (at your option) any later version. This 

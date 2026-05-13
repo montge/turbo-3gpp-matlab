@@ -20,7 +20,7 @@ function E_r = get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)
 %   E_r will be a row vector comprising C elements, each of which specifies
 %   the encoded code block length for the corresponding segment.
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you 
+% Copyright Â© 2018 Robert G. Maunder. This program is free software: you 
 % can redistribute it and/or modify it under the terms of the GNU General 
 % Public License as published by the Free Software Foundation, either 
 % version 3 of the License, or (at your option) any later version. This 
@@ -31,6 +31,14 @@ function E_r = get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)
 
 
 E_r = zeros(1,C);
+
+% TS36.212 Section 5.1.4.1.2 assumes G is a multiple of N_L*Q_m so that
+% G_prime = G/(N_L*Q_m) is integer and sum(E_r) = G. Validate here so
+% callers do not silently get non-summing segment lengths.
+if mod(G, N_L*Q_m) ~= 0
+    error('get_3gpp_encoded_code_block_segment_lengths:bad_G', ...
+        'G = %d must be a multiple of N_L*Q_m = %d.', G, N_L*Q_m);
+end
 
 G_prime = G/(N_L*Q_m);
 

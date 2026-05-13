@@ -3,3 +3,10 @@
 
 # Node / npm tooling (OpenSpec)
 node_modules/
+
+# Test artifacts (regenerated each CI run)
+tests/coverage.xml
+tests/coverage.txt
+tests/coverage_dbg.xml
+tests/metric.txt
+results/

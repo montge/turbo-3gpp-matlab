@@ -58,3 +58,51 @@ jobs:
 
       - name: Validate all OpenSpec items (strict)
         run: npx openspec validate --all --strict
+
+  tests:
+    name: MOxUnit suite, coverage gate, traceability, MISS_HIT
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Octave
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --fix-missing octave
+          octave --version | head -1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install MISS_HIT and defusedxml
+        # defusedxml hardens scripts/coverage_gate.py's XML parsing against
+        # billion-laughs / quadratic-blowup DoS. The script also falls back to
+        # the stdlib parser when defusedxml is unavailable.
+        run: pip install --quiet miss_hit==0.9.42 defusedxml==0.7.1
+
+      - name: Run MOxUnit suite (unit + property tests)
+        run: bash scripts/run_tests.sh
+
+      - name: Spec-to-test traceability check
+        run: python3 scripts/check_spec_traceability.py
+
+      - name: MOcov line coverage with 90% gate
+        run: bash scripts/run_coverage.sh
+
+      - name: MISS_HIT static analysis (mh_style + mh_lint + mh_metric)
+        run: bash scripts/run_miss_hit.sh
+
+      - name: Upload coverage and metric artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            tests/coverage.txt
+            tests/coverage.xml
+            tests/metric.txt
+          if-no-files-found: warn

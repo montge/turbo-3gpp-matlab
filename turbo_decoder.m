@@ -34,7 +34,7 @@ function [c, iterations_performed] = turbo_decoder(d_a, pi, max_iterations, G_ma
 %   which may be lower than max_iterations when early termination is
 %   enabled.
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you
+% Copyright Â© 2018 Robert G. Maunder. This program is free software: you
 % can redistribute it and/or modify it under the terms of the GNU General
 % Public License as published by the Free Software Foundation, either
 % version 3 of the License, or (at your option) any later version. This
@@ -46,13 +46,23 @@ function [c, iterations_performed] = turbo_decoder(d_a, pi, max_iterations, G_ma
 
 K = size(d_a,2)-4;
 if size(d_a,1) ~= 3
-    error('d_a should have 3 rows');
+    error('turbo_decoder:bad_d_a_rows', 'd_a should have 3 rows');
 end
 if length(pi) ~= K
-    error('length of pi does not match K');
+    error('turbo_decoder:pi_length_mismatch', 'length of pi does not match K');
+end
+if ~isnumeric(max_iterations) || ~isscalar(max_iterations) ...
+        || ~isreal(max_iterations) || ~isfinite(max_iterations)
+    error('turbo_decoder:iterations_invalid', ...
+        'iterations must be a real, finite numeric scalar');
 end
 if max_iterations ~= round(2*max_iterations)/2
-    error('iterations must be a multiple of 0.5');
+    error('turbo_decoder:iterations_not_half_multiple', ...
+        'iterations must be a multiple of 0.5');
+end
+if max_iterations < 0
+    error('turbo_decoder:iterations_negative', ...
+        'iterations must be non-negative');
 end
 
 

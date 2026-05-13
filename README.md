@@ -17,6 +17,45 @@ octave --no-gui test_octave_smoke.m
 
 The plotting/simulation drivers (`plot_BLER_vs_SNR.m`, `plot_SNR_vs_A.m`) still require MATLAB.
 
+## Running tests
+
+The repository ships an [MOxUnit](https://github.com/MOxUnit/MOxUnit) test suite (~95 tests across 24 files) and a [MOcov](https://github.com/MOcov/MOcov) line-coverage gate. Both run on GNU Octave 8.4+ and on MATLAB R2020a+.
+
+Clone with submodules:
+
+```bash
+git clone --recursive https://github.com/montge/turbo-3gpp-matlab.git
+# Or if already cloned:
+git submodule update --init --recursive
+```
+
+Run the test suite (unit tests in `tests/` + property-based tests in `tests/property/`):
+
+```bash
+npm test                                  # or: bash scripts/run_tests.sh
+```
+
+Run line-coverage measurement under MOcov with the 90 % gate (writes `tests/coverage.txt`, fails non-zero below the gate):
+
+```bash
+bash scripts/run_coverage.sh
+```
+
+Run static analysis (MISS_HIT `mh_style` + `mh_lint` + `mh_metric`, with the project's `miss_hit.cfg`):
+
+```bash
+pip install miss_hit==0.9.42
+bash scripts/run_miss_hit.sh
+```
+
+Check that every `#### Scenario:` block in the OpenSpec capability specs has at least one matching test function (CI gates this):
+
+```bash
+python3 scripts/check_spec_traceability.py
+```
+
+CI uploads `tests/coverage.txt`, `tests/coverage.xml`, and `tests/metric.txt` as the `test-artifacts` artifact on every run (pass or fail) so you can review per-PR coverage trends.
+
 ## Specification
 
 Behavior is recorded under [`openspec/`](openspec/) as a [Fission-AI OpenSpec](https://github.com/Fission-AI/OpenSpec) project. Validate locally:
