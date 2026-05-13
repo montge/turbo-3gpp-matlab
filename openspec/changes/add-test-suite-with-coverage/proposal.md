@@ -27,6 +27,6 @@ None. This change does not alter any DSP behavior; it only adds verification.
 
 - New top-level `tests/` directory containing MOxUnit, the per-source test files, and the property-based catalogue.
 - New `.github/workflows/ci.yml` job `tests`; `npm run test` script in `package.json` for local invocation.
-- New CI artifact: `coverage.txt` (LCOV-style summary) uploaded on every run.
+- New CI artifact: `tests/coverage.txt` (LCOV-style summary) uploaded on every run.
 - No changes to any existing `.m` source file in the repo root.
 - Each requirement in `openspec/specs/{crc,internal-interleaver,turbo-encoder,turbo-decoder,rate-matching,code-block-segmentation,coding-chain}/spec.md` becomes test-traceable: each `#### Scenario:` in the canonical specs gets at least one matching test in `tests/`.

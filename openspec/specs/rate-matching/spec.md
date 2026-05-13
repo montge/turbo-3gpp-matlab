@@ -10,7 +10,7 @@ The system SHALL implement subblock interleaving as specified in §5.1.4.1.1 of 
 1. Choose the smallest `R_TC_subblock` such that `D ≤ R_TC_subblock * 32` and set `K_Pi = R_TC_subblock * 32`.
 2. Left-pad `d` with `N_D = K_Pi - D` `NaN` entries.
 3. For `subblock_interleaver_index ∈ {0, 1}`: reshape the padded sequence into a `R_TC_subblock × 32` row-major matrix, permute its columns using `P = [0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 14, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 27, 7, 23, 15, 31]`, and read out row-major.
-4. For `subblock_interleaver_index = 2`: produce `pi(k) = mod(P(floor(k / R_TC_subblock) + 1) + 32 * mod(k, R_TC_subblock) + 1, K_Pi)` for `k = 0..K_Pi - 1` and read `y(pi + 1)`.
+4. For `subblock_interleaver_index = 2`: let `y` denote the length-`K_Pi` left-padded input sequence produced by step 2. Produce `pi(k) = mod(P(floor(k / R_TC_subblock) + 1) + 32 * mod(k, R_TC_subblock) + 1, K_Pi)` for `k = 0..K_Pi - 1`, and return `y(pi + 1)`.
 
 The returned vector SHALL have length `K_Pi`, with the `NaN` filler propagated to the interleaved positions.
 

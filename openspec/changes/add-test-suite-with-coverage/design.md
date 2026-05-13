@@ -50,7 +50,7 @@ The MISS_HIT config tunes line length to 120, enables tab-vs-space enforcement, 
 
 ### Decision 6: Coverage data uploaded as a CI artifact
 
-Storing `coverage.txt` (LCOV summary) as an actions/upload-artifact gives reviewers a quick diff of which lines went from covered → uncovered in a PR. No third-party coverage service (Codecov, Coveralls) is wired up by this change — that's a separate "send coverage upstream" decision.
+Storing `tests/coverage.txt` (LCOV summary) as an actions/upload-artifact gives reviewers a quick diff of which lines went from covered → uncovered in a PR. No third-party coverage service (Codecov, Coveralls) is wired up by this change — that's a separate "send coverage upstream" decision.
 
 ## Risks / Trade-offs
 
