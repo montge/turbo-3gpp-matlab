@@ -34,7 +34,7 @@ function [c, iterations_performed] = turbo_decoder(d_a, pi, max_iterations, G_ma
 %   which may be lower than max_iterations when early termination is
 %   enabled.
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you
+% Copyright ï¿½ 2018 Robert G. Maunder. This program is free software: you
 % can redistribute it and/or modify it under the terms of the GNU General
 % Public License as published by the Free Software Foundation, either
 % version 3 of the License, or (at your option) any later version. This
@@ -53,6 +53,9 @@ if length(pi) ~= K
 end
 if max_iterations ~= round(2*max_iterations)/2
     error('iterations must be a multiple of 0.5');
+end
+if max_iterations < 0
+    error('iterations must be non-negative');
 end
 
 
