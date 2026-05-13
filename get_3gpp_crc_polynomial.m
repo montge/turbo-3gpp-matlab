@@ -14,7 +14,7 @@ function crc_polynomial = get_3gpp_crc_polynomial(CRC)
 %   polynomial. From left to right, the bits provide the coefficients for
 %   the elements D^P, D^P-1, D^P-2, ..., D^2, D, 1.
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you 
+% Copyright Â© 2018 Robert G. Maunder. This program is free software: you 
 % can redistribute it and/or modify it under the terms of the GNU General 
 % Public License as published by the Free Software Foundation, either 
 % version 3 of the License, or (at your option) any later version. This 

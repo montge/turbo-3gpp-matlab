@@ -10,7 +10,7 @@ function f = code_block_concatenation(e_r)
 %   f will be a row vector comprising G encoded transport bits, where G is
 %   the sum of E_r.
 %
-% Copyright © 2018 Robert G. Maunder. This program is free software: you 
+% Copyright Â© 2018 Robert G. Maunder. This program is free software: you 
 % can redistribute it and/or modify it under the terms of the GNU General 
 % Public License as published by the Free Software Foundation, either 
 % version 3 of the License, or (at your option) any later version. This 

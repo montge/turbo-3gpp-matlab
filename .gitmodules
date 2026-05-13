@@ -1,3 +1,6 @@
 [submodule "tests/MOxUnit"]
 	path = tests/MOxUnit
 	url = https://github.com/MOxUnit/MOxUnit.git
+[submodule "tests/MOcov"]
+	path = tests/MOcov
+	url = https://github.com/MOcov/MOcov.git
