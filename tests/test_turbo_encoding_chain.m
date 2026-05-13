@@ -29,5 +29,9 @@ function test_encode_rejects_wrong_length_input
     global approx_star;
     approx_star = false;
     hEnc = turbo_encoding_chain('A', 16);
-    assertExceptionThrown(@() step(hEnc, zeros(1, 17)), '*');
-    assertExceptionThrown(@() step(hEnc, zeros(1, 15)), '*');
+    % Assert on the specific identifier so a future refactor that hides this
+    % error path (e.g. an upstream check raising a different error) will fail.
+    assertExceptionThrown(@() step(hEnc, zeros(1, 17)), ...
+        'turbo_encoding_chain:wrong_length_input');
+    assertExceptionThrown(@() step(hEnc, zeros(1, 15)), ...
+        'turbo_encoding_chain:wrong_length_input');

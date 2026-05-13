@@ -8,7 +8,7 @@
 %   the specified Value. You can specify additional name-value pair
 %   arguments in any order as (Name1,Value1,...,NameN,ValueN).
 %
-%   Copyright � 2018 Robert G. Maunder. This program is free software: you
+%   Copyright © 2018 Robert G. Maunder. This program is free software: you
 %   can redistribute it and/or modify it under the terms of the GNU General
 %   Public License as published by the Free Software Foundation, either
 %   version 3 of the License, or (at your option) any later version. This
@@ -72,9 +72,10 @@ classdef turbo_decoding_chain < turbo_coding_chain
         end
         
         function [a, iterations_performed] = stepImpl(obj, f)
-            if length(f) ~= obj.G
+            if ~isvector(f) || numel(f) ~= obj.G
                 error('turbo_decoding_chain:wrong_length_input', ...
-                    'Expected length(f) = G = %d, got %d.', obj.G, length(f));
+                    'Expected a row vector of length G = %d, got size [%s].', ...
+                    obj.G, num2str(size(f)));
             end
             e_r = code_block_deconcatenation(f, obj.E_r);
             

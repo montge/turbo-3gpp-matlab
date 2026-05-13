@@ -13,9 +13,19 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import math
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
+
+# Prefer defusedxml when available (it hardens against XML DoS attacks like
+# billion-laughs / quadratic blowup). The fallback to stdlib keeps the script
+# usable locally without an extra dependency; CI installs defusedxml.
+try:
+    from defusedxml import ElementTree as ET
+    from defusedxml.common import DefusedXmlException as _XmlSecurityError
+except ImportError:
+    import xml.etree.ElementTree as ET  # type: ignore[no-redef]
+    _XmlSecurityError = ET.ParseError  # type: ignore[misc,assignment]
 
 
 def main() -> int:
@@ -35,7 +45,7 @@ def main() -> int:
 
     try:
         tree = ET.parse(xml_path)
-    except ET.ParseError as exc:
+    except (ET.ParseError, _XmlSecurityError, OSError) as exc:
         print(f"ERROR: failed to parse {xml_path}: {exc}", file=sys.stderr)
         return 2
 
@@ -85,7 +95,13 @@ def main() -> int:
     summary_path.write_text(summary)
     sys.stdout.write(summary)
 
-    if pct + 1e-9 < threshold:
+    # `math.isclose` with abs_tol scaled to one-line worth of percentage absorbs
+    # round-off symmetrically. e.g. for total_lines=474 the per-line contribution
+    # is ~0.21 %, so abs_tol = half of one-line keeps the boundary unambiguous
+    # while still rejecting genuine misses.
+    per_line_pct = 100.0 / total_lines if total_lines else 0.0
+    abs_tol = max(per_line_pct / 2.0, 1e-9)
+    if pct < threshold and not math.isclose(pct, threshold, abs_tol=abs_tol):
         print(f"\nFAIL: line coverage {pct:.2f}% is below the {threshold:.2f}% "
               f"threshold. Largest contributors to the uncovered set are listed "
               f"above.")

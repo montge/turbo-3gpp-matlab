@@ -63,9 +63,9 @@ def collect_test_names() -> set[str]:
     if not TESTS_DIR.exists():
         return names
     for path in TESTS_DIR.rglob("*.m"):
-        # Skip the vendored MOxUnit submodule -- its own self-tests do not
-        # satisfy the source spec.
-        if "MOxUnit" in path.parts:
+        # Skip the vendored MOxUnit and MOcov submodules -- their own
+        # self-tests do not satisfy the source spec.
+        if any(part in {"MOxUnit", "MOcov"} for part in path.parts):
             continue
         with path.open() as fh:
             for line in fh:

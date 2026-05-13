@@ -26,9 +26,11 @@ function test_indices_0_and_1_preserve_payload_set
     % of the output are a permutation of the input.
     D = 100;
     d = 1:D;
-    v = subblock_interleaver(d, 0);
-    payload = v(~isnan(v));
-    assertEqual(sort(payload), 1:D);
+    for idx = [0, 1]
+        v = subblock_interleaver(d, idx);
+        payload = v(~isnan(v));
+        assertEqual(sort(payload), 1:D);
+    end
 
 function test_index_2_pads_with_nan
     % Index 2 also produces K_Pi - D filler NaNs.

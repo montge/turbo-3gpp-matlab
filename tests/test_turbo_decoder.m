@@ -71,8 +71,10 @@ function test_invalid_iteration_count_not_multiple_of_0_5
     K = 40;
     d_a = zeros(3, K + 4);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, 0.3), '*');
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, 1.25), '*');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, 0.3), ...
+        'turbo_decoder:iterations_not_half_multiple');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, 1.25), ...
+        'turbo_decoder:iterations_not_half_multiple');
 
 function test_invalid_iteration_count_negative_value
     global approx_star;
@@ -80,8 +82,10 @@ function test_invalid_iteration_count_negative_value
     K = 40;
     d_a = zeros(3, K + 4);
     pi = internal_interleaver(0:K - 1);
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, -1), '*');
-    assertExceptionThrown(@() turbo_decoder(d_a, pi, -0.5), '*');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, -1), ...
+        'turbo_decoder:iterations_negative');
+    assertExceptionThrown(@() turbo_decoder(d_a, pi, -0.5), ...
+        'turbo_decoder:iterations_negative');
 
 function test_d_a_must_have_three_rows
     global approx_star;

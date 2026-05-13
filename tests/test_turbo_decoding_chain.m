@@ -72,5 +72,9 @@ function test_decode_rejects_wrong_length_input
     global approx_star;
     approx_star = false;
     hDec = turbo_decoding_chain('A', 16, 'G', 132);
-    assertExceptionThrown(@() step(hDec, zeros(1, 131)), '*');
-    assertExceptionThrown(@() step(hDec, zeros(1, 133)), '*');
+    % Assert on the specific identifier so a future refactor that hides this
+    % error path (e.g. an upstream check raising a different error) will fail.
+    assertExceptionThrown(@() step(hDec, zeros(1, 131)), ...
+        'turbo_decoding_chain:wrong_length_input');
+    assertExceptionThrown(@() step(hDec, zeros(1, 133)), ...
+        'turbo_decoding_chain:wrong_length_input');

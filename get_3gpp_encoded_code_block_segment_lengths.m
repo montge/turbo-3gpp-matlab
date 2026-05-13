@@ -32,6 +32,14 @@ function E_r = get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)
 
 E_r = zeros(1,C);
 
+% TS36.212 Section 5.1.4.1.2 assumes G is a multiple of N_L*Q_m so that
+% G_prime = G/(N_L*Q_m) is integer and sum(E_r) = G. Validate here so
+% callers do not silently get non-summing segment lengths.
+if mod(G, N_L*Q_m) ~= 0
+    error('get_3gpp_encoded_code_block_segment_lengths:bad_G', ...
+        'G = %d must be a multiple of N_L*Q_m = %d.', G, N_L*Q_m);
+end
+
 G_prime = G/(N_L*Q_m);
 
 gamma = mod(G',C);

@@ -27,11 +27,12 @@ function test_zero_input_produces_zero_output
 
 function test_trellis_termination_forces_zero_state
     % After the 3 termination steps the encoder state (s1, s2, s3) must be
-    % zero for any input. Re-implement the encoder locally up to the end of
-    % the termination steps and assert the final state.
+    % zero for any input. Replay the trellis locally using the *encoder's
+    % own* termination bits (x(K+1..K+3)) so a bug in the encoder's
+    % termination logic would actually fail this assertion.
     K = 96;
     c = double(rand(1, K) > 0.5);
-    constituent_encoder(c);   % runs the public encoder for coverage
+    [~, x] = constituent_encoder(c);
     s1 = 0; s2 = 0; s3 = 0;
     for k = 1:K
         s1_plus = mod(c(k) + s2 + s3, 2);
@@ -40,7 +41,8 @@ function test_trellis_termination_forces_zero_state
         s1 = s1_plus; s2 = s2_plus; s3 = s3_plus;
     end
     for k = 1:3
-        s1_plus = 0;
+        u = x(K + k);                       % encoder-supplied termination input
+        s1_plus = mod(u + s2 + s3, 2);
         s2_plus = s1;
         s3_plus = s2;
         s1 = s1_plus; s2 = s2_plus; s3 = s3_plus;

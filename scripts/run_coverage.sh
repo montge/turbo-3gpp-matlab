@@ -33,9 +33,14 @@ COVERAGE_THRESHOLD="${COVERAGE_THRESHOLD:-90}"
     addpath(fullfile(repo_root, 'tests', 'MOxUnit', 'MOxUnit'));
     addpath(fullfile(repo_root, 'tests', 'MOcov', 'MOcov'));
     moxunit_set_path();
-    % Change pwd to a directory that contains no .m sources so the implicit
-    % '.' path entry does not shadow MOcov's rewritten files in tempdir().
-    cd(tempdir());
+    % Change pwd to a fresh, unique tempname() subdirectory so the implicit
+    % '.' path entry does not shadow MOcov's rewritten files. Using
+    % tempname() (and removing it on exit) guards against stale instrumented
+    % files left behind by prior runs on the same runner.
+    cov_pwd = tempname();
+    mkdir(cov_pwd);
+    cleanup_cov_pwd = onCleanup(@() rmdir(cov_pwd, 's'));
+    cd(cov_pwd);
     % Run only the unit tests (not tests/property/*) under instrumentation.
     % Property tests sweep random parameters and add ~6-10 minutes under
     % instrumentation without exercising any source lines that the unit
@@ -61,6 +66,12 @@ COVERAGE_THRESHOLD="${COVERAGE_THRESHOLD:-90}"
         exit(1);
     end
 "
+
+if [ ! -s tests/coverage.xml ]; then
+    echo "ERROR: tests/coverage.xml was not produced or is empty." >&2
+    echo "Check the Octave step above for MOcov errors." >&2
+    exit 3
+fi
 
 python3 scripts/coverage_gate.py \
     --xml tests/coverage.xml \

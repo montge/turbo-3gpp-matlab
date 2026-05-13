@@ -13,7 +13,8 @@ function test_derate_maps_each_e_index_back_to_a_unique_d_index
     for ii = 1:sample_count
         % Pick a random supported K, a random F < K, and a random rv_idx.
         K = supported_K(floor(rand * numel(supported_K)) + 1);
-        F = floor(rand * (K - 1));
+        % Include the F = K-1 edge case (only one non-filler slot in rows 1-2).
+        F = floor(rand * K);
         rv_idx = floor(rand * 4);
         D = K + 4;
         % Build the canonical rate-matching pattern via the index-matrix recipe.
