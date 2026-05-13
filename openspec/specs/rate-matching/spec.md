@@ -51,7 +51,7 @@ The implementation SHALL raise an error if `v` does not have 3 rows, if `K_Pi` i
 
 ### Requirement: Combined rate matching produces invertible bit-position pattern
 
-The system SHALL combine subblock interleaving and circular buffering into a `rate_matching(d, N_ref, I_LBRM, rv_idx, E)` operation that applies the three rows of `d` to the three subblock-interleaver indices `0`, `1`, `2` respectively before circular buffering. When `d` is the index matrix `reshape(0:3*D-1, 3, D)` with filler positions set to `NaN`, the operation SHALL return the rate-matching pattern `pi` such that rate matching is `e = d_vec(pi + 1)` and rate dematching of LLRs `e` is the accumulator `d_vec(pi(k) + 1) += e(k)`.
+The system SHALL combine subblock interleaving and circular buffering into a `rate_matching(d, N_ref, I_LBRM, rv_idx, E)` operation that applies the three rows of `d` to the three subblock-interleaver indices `0`, `1`, `2` respectively before circular buffering. When `d` is the index matrix `reshape(0:3*D-1, 3, D)` with filler positions set to `NaN`, the operation SHALL return the rate-matching pattern `pi` such that rate matching is `e = d_vec(pi + 1)` and rate-dematching of LLRs `e` is the accumulator `d_vec(pi(k) + 1) += e(k)`.
 
 #### Scenario: Encode → derate matches round-trip in the noise-free case
 - **WHEN** an encoded matrix `d` of dimension `3 × D` is rate-matched to produce a length-`E` vector, the LLR mapping `0 → +1, 1 → -1` is applied, and the inverse rate-dematching accumulates back into a `3 × D` matrix
