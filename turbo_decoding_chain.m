@@ -8,7 +8,7 @@
 %   the specified Value. You can specify additional name-value pair
 %   arguments in any order as (Name1,Value1,...,NameN,ValueN).
 %
-%   Copyright © 2018 Robert G. Maunder. This program is free software: you
+%   Copyright ï¿½ 2018 Robert G. Maunder. This program is free software: you
 %   can redistribute it and/or modify it under the terms of the GNU General
 %   Public License as published by the Free Software Foundation, either
 %   version 3 of the License, or (at your option) any later version. This
@@ -56,7 +56,7 @@ classdef turbo_decoding_chain < turbo_coding_chain
     methods
         % Constructor allowing properties to be set according to e.g.
         % a = turbo_decoding_chain('A',40,'G',132);
-        function obj = NRLDPCDecoder(varargin)
+        function obj = turbo_decoding_chain(varargin)
             setProperties(obj,nargin,varargin{:});
         end
     end

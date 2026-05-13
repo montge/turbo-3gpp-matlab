@@ -1,2 +1,5 @@
 *.m~
 .DS_Store
+
+# Node / npm tooling (OpenSpec)
+node_modules/
