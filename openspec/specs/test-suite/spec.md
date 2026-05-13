@@ -1,7 +1,7 @@
 # test-suite Specification
 
 ## Purpose
-TBD - created by archiving change add-test-suite-with-coverage. Update Purpose after archive.
+Defines the canonical contract for verifying turbo-3gpp-matlab against the OpenSpec capability specs. Covers the cross-runtime MOxUnit framework (MATLAB R2020a+ and GNU Octave 8.4+), the per-source unit-test and per-capability property-test layout, the deterministic-seed discipline for property tests, the spec-to-test traceability gate (every `#### Scenario:` block in the canonical specs must be matched by at least one test function), MOcov line-coverage measurement with a ≥ 90 % gate, MISS_HIT static analysis (`mh_style`, `mh_lint`, `mh_metric`) with the project-wide configuration, and the CI integration that runs all of the above on every pull request and pushes the resulting coverage / metric artifacts.
 ## Requirements
 ### Requirement: Cross-runtime test framework
 
