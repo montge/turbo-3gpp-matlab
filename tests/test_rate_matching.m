@@ -7,7 +7,7 @@ function test_suite = test_rate_matching
     end
     initTestSuite;
 
-function test_encode_derate_round_trip_in_the_noise_free_case
+function test_encode_derate_matches_round_trip_in_the_noise_free_case
     % Mirror the example in rate_matching.m's docstring: build the index
     % matrix, derive pi via rate_matching, apply 0->+1 / 1->-1, derate
     % through accumulation, and check every non-NaN entry is sign-correct.

@@ -23,7 +23,7 @@ function test_rejects_non_multiple_of_32_columns
     v_bad = zeros(3, 33);
     assertExceptionThrown(@() circular_buffer(v_bad, 0, 0, 0, 10), '*');
 
-function test_redundancy_versions_select_different_starting_offsets
+function test_redundancy_versions_select_different_starting_offsets_no_lbrm
     % No-LBRM mode and a buffer large enough that the four rv_idx values
     % give four distinct k_0 modulo N_cb. Tag bit-0 onward so the start
     % position of each rv slice is identifiable.

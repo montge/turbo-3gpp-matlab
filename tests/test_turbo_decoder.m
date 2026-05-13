@@ -65,7 +65,7 @@ function test_half_iteration_support
     assertEqual(numel(c_hat), K);
     assertEqual(iter, 0.5);
 
-function test_invalid_iteration_count_not_multiple_of_half
+function test_invalid_iteration_count_not_multiple_of_0_5
     global approx_star;
     approx_star = false;
     K = 40;

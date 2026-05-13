@@ -35,8 +35,7 @@ function test_multi_segment_over_z
         assertFalse(isempty(find(supported == v, 1)));
     end
 
-function test_invalid_transport_block_size_zero
+function test_invalid_transport_block_size
+    % Both zero and negative B must be rejected.
     assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(0), '*');
-
-function test_invalid_transport_block_size_negative
     assertExceptionThrown(@() get_3gpp_code_block_segment_lengths(-1), '*');
