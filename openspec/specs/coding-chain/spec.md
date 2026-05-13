@@ -1,7 +1,7 @@
 # coding-chain Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the top-level `turbo_coding_chain` base class that owns all derived parameters (`B`, `C`, `K_r`, `D_r`, `E_r`, `N_ref`, …) and the system-object API (`step`, `reset`, `release`, name-value construction), plus its `turbo_encoding_chain` and `turbo_decoding_chain` subclasses that compose CRC, segmentation, encoding, rate matching, decoding, and optional HARQ accumulation.
 ## Requirements
 ### Requirement: turbo_coding_chain base class owns derived parameters
 
@@ -57,6 +57,10 @@ The system SHALL provide `turbo_encoding_chain`, a subclass of `turbo_coding_cha
 - **WHEN** `step(obj, a)` is called twice with the same `a` on the same configured object
 - **THEN** both calls return identical row vectors
 
+#### Scenario: Encode rejects wrong-length input
+- **WHEN** `step(obj, a)` is called with `length(a) != obj.A`
+- **THEN** the call raises an error citing the expected length `A` and the actual length
+
 ### Requirement: Decoding chain composes deconcatenation, dematching, decoding, and CRC
 
 The system SHALL provide `turbo_decoding_chain`, a subclass of `turbo_coding_chain`, with two additional properties:
@@ -84,4 +88,8 @@ The decoder SHALL also return `iterations_performed`, a length-`C` row vector of
 #### Scenario: CRC failure returns empty
 - **WHEN** the LLR input is sufficiently corrupted that the transport-block CRC fails after decoding
 - **THEN** the decoder returns `[]`
+
+#### Scenario: Decode rejects wrong-length input
+- **WHEN** `step(obj, f)` is called with `length(f) != obj.G`
+- **THEN** the call raises an error citing the expected length `G` and the actual length
 

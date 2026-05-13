@@ -1,7 +1,7 @@
 # crc Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the four 3GPP CRC polynomials (CRC24A, CRC24B, CRC16, CRC8) from TS36.212 §5.1.1, generator-matrix construction from those polynomials, and the calculate / generate-and-append / check-and-remove operations used at both the transport-block and code-block layers.
 ## Requirements
 ### Requirement: 3GPP CRC polynomial selection
 
@@ -58,4 +58,8 @@ The system SHALL provide three CRC operations on bit vectors that all use the sa
 #### Scenario: Generator matrix sized larger than input
 - **WHEN** `calculate_crc_bits(a, G_max)` is called with `size(G_max, 1) > length(a)`
 - **THEN** only the trailing `length(a)` rows of `G_max` are used, and the resulting CRC has length `size(G_max, 2)`
+
+#### Scenario: Generator matrix smaller than input
+- **WHEN** `calculate_crc_bits(a, G_max)` is called with `size(G_max, 1) < length(a)`
+- **THEN** the call raises an error (it MUST NOT silently truncate `a` or perform out-of-range indexing)
 

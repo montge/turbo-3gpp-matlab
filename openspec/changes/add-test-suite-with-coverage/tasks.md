@@ -50,6 +50,16 @@ For each source `.m` file in the repository root, add `tests/test_<source>.m` co
 - [ ] 5.3 Add a coverage-gate step that parses the percentage and exits non-zero below 90 %
 - [ ] 5.4 Upload `tests/coverage.txt` via `actions/upload-artifact@v4`
 
+## 5b. MISS_HIT static analysis
+
+- [ ] 5b.1 Add `miss_hit.cfg` at the repository root with `project_root` set, the documented exclusions (`tests/MOxUnit`, `node_modules`, `results`, `openspec/changes/archive`), and rule tuning so the first CI run passes against the existing source unchanged
+- [ ] 5b.2 Pin a MISS_HIT version in `requirements-ci.txt` (or directly in the workflow) and install it in CI via `pip install`
+- [ ] 5b.3 Run `mh_style --fail-on-error` against the repository in CI
+- [ ] 5b.4 Run `mh_lint --fail-on-error` against the repository in CI
+- [ ] 5b.5 Run `mh_metric` producing `tests/metric.txt` (informational; no failure threshold)
+- [ ] 5b.6 Upload `tests/metric.txt` via `actions/upload-artifact@v4`
+- [ ] 5b.7 Verify the gate passes on master with zero `.m` edits
+
 ## 6. CI integration
 
 - [ ] 6.1 Add a new `tests` job to `.github/workflows/ci.yml` running steps 1.2 → 5.3 on `ubuntu-latest`

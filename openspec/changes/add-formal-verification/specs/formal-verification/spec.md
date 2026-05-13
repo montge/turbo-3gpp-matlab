@@ -21,7 +21,7 @@ The system SHALL provide a Lean 4 proof that for every supported information-blo
 - **THEN** Lean reports success with no `sorry` markers
 
 #### Scenario: All 188 K values covered
-- **WHEN** the table of supported `K` values in `proofs/lean/InterleaverTable.lean` is compared with the table embedded in `internal_interleaver.m`
+- **WHEN** the table of supported `K` values in `proofs/lean/Interleaver/Table.lean` is compared with the table embedded in `internal_interleaver.m`
 - **THEN** both contain exactly the same 188 `(K, f1, f2)` triples
 
 ### Requirement: Lean 4 constituent encoder termination proof
@@ -41,19 +41,19 @@ The system SHALL provide a Lean 4 proof that applying the three trellis-terminat
 The system SHALL provide a TLA+ specification `proofs/tla/harq.tla` modeling the HARQ retransmission protocol implemented by `turbo_encoding_chain` + `turbo_decoding_chain` with `I_HARQ = 1`, including:
 
 - A state variable `rv_idx_sequence : Seq(0..3)` representing the configured retransmission order.
-- A state variable `attempt : 1..Len(rv_idx_sequence)` tracking the current retransmission index.
+- A state variable `attempt : 1..(Len(rv_idx_sequence) + 1)` tracking the current retransmission index, where the upper bound `Len(rv_idx_sequence) + 1` denotes the terminal explicit-failure state reached after every redundancy version has been tried without a CRC pass.
 - A state variable `decoded : {NULL} \cup InformationBlock` representing the decoder's current output (`NULL` while still failing CRC).
 - Actions for `EncodeAndTransmit`, `Channel` (non-deterministic, models AWGN as bounded bit flips), `DecodeAndCheck`, and `AdvanceRv`.
 
 The model SHALL satisfy:
 
-- **Safety** `CRCPassImpliesCorrect`: in every state where `DecodeAndCheck` sets `decoded /= NULL`, the value of `decoded` equals the originally transmitted information block.
+- **Safety** `CRCPassImpliesSyndromeZero`: in every state where `DecodeAndCheck` sets `decoded /= NULL`, the CRC of `decoded` computed against `CRC_generator_matrix_TB` is the zero vector. (This matches the actual decoder acceptance criterion; the stronger property `decoded = original` cannot be formally guaranteed against an unbounded channel because CRC-24 admits ~ 1 / 2²⁴ undetected-error collisions, which is the documented behavior of the standard, not a defect of the implementation.)
 - **Bounded liveness** `EventualTermination`: every trace either reaches a state with `decoded /= NULL` or reaches `attempt = Len(rv_idx_sequence) + 1` (explicit failure), in finite steps.
 
 A `proofs/tla/harq.cfg` SHALL configure TLC with finite parameter bounds (e.g. `Len(rv_idx_sequence) = 4`, information block length `A = 16`) so model checking terminates on a standard CI runner.
 
 #### Scenario: TLC checks the safety invariant
-- **WHEN** `tlc harq.tla -config harq.cfg -invariant CRCPassImpliesCorrect` is invoked
+- **WHEN** `tlc harq.tla -config harq.cfg -invariant CRCPassImpliesSyndromeZero` is invoked
 - **THEN** TLC reports `Model checking completed. No error has been found.`
 
 #### Scenario: TLC checks bounded liveness
@@ -80,7 +80,7 @@ The system SHALL provide:
 
 The system SHALL provide `proofs/traceability.md` containing a table mapping every proof obligation in this capability to:
 
-- The proof artifact (e.g. `proofs/lean/crc_equivalence.lean`, `proofs/tla/harq.tla`)
+- The proof artifact (e.g. the `proofs/lean/CRC/` module producing the `crc_equivalence` target, `proofs/tla/harq.tla`)
 - The OpenSpec capability and requirement title it discharges (e.g. `crc / CRC calculation, append, and verify`)
 - The specific `#### Scenario:` block(s) the proof covers
 

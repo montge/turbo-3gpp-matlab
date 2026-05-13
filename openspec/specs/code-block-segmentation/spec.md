@@ -1,7 +1,7 @@
 # code-block-segmentation Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines segmentation of an `A + 24`-bit transport block into `C` code blocks per TS36.212 §5.1.2 (including filler bits and per-segment code-block CRCs when `C > 1`), the inverse desegmentation with CRC verification, and the encoded code-block concatenation / deconcatenation that bracket the per-segment encode and decode pipelines.
 ## Requirements
 ### Requirement: Code block segment lengths follow TS36.212 §5.1.2
 

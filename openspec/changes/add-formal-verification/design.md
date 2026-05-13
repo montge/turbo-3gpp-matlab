@@ -50,9 +50,9 @@ Every PR that changes:
 
 `proofs/traceability.md` maps each proof to the OpenSpec requirement and scenario it discharges. Example row:
 
-```
+```text
 | Lean proof              | Spec                                       | Scenario                       |
-| crc_equivalence.lean    | openspec/specs/crc/spec.md                 | "CRC append round-trips ..."   |
+| crc_equivalence module  | openspec/specs/crc/spec.md                 | "CRC append round-trips ..."   |
 ```
 
 Reviewers should be able to read the matrix top-to-bottom and confirm coverage without opening each proof file. This is also what we'd export into a conformance report.

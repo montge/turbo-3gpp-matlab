@@ -1,7 +1,7 @@
 # internal-interleaver Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the Quadratic Permutation Polynomial (QPP) interleaver from TS36.212 §5.1.3.2.3 over the 188 supported information-block lengths `K ∈ {40, …, 6144}`, including the standardized `(K, f1, f2)` constants table and the permutation formula `pi(i) = mod(f1 * i + f2 * i², K)`.
 ## Requirements
 ### Requirement: QPP interleaver for all 188 supported block lengths
 

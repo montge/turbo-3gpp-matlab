@@ -1,7 +1,7 @@
 # turbo-encoder Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the rate-1/3 parallel-concatenated convolutional encoder of TS36.212 §5.1.3.2, including the 3-memory recursive systematic constituent encoder (generator `[1,1,0,1]`, feedback `[1,0,1,1]`), the 3-step trellis termination, and the `3 × (K + 4)` output-bit layout that places systematic and parity bits across both constituent codes.
 ## Requirements
 ### Requirement: Recursive systematic convolutional constituent encoder
 

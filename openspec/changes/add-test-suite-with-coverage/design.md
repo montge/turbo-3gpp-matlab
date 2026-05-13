@@ -40,7 +40,15 @@ We need a test framework that:
 
 To keep CI reproducible, every property test seeds `rand('state', ...)` at the top. We sample N random instances per property (e.g. 32 distinct `K` values for the interleaver property), not all of them, to keep CI under a minute on the runner.
 
-### Decision 5: Coverage data uploaded as a CI artifact
+### Decision 5: MISS_HIT for style + lint
+
+[MISS_HIT](https://github.com/florianschanda/miss_hit) is the only mature static-analysis suite that handles both MATLAB and Octave `.m` files: `mh_style` for formatting/style, `mh_lint` for semantic warnings (undefined names, shadowed functions, unreachable code), and `mh_metric` for complexity metrics. It installs via `pip install miss_hit`, emits JSON for CI integration, and is configurable via a `miss_hit.cfg` file at the project root.
+
+To avoid the usual "ratchet hell" of dropping a linter on a vendored DSP codebase, the gate fails CI only on **errors** (clear bugs: undefined variables, shadowed functions, broken syntax). **Warnings** (style preferences, naming) are reported in CI logs but do not fail the build until a separate ratcheting change. `mh_metric` runs informational only; it writes a per-file metric report to `tests/metric.txt` for trend analysis but does not gate.
+
+The MISS_HIT config tunes line length to 120, enables tab-vs-space enforcement, and excludes `tests/MOxUnit/`, `node_modules/`, `results/`, and `openspec/changes/archive/`. The first CI run with this gate enabled MUST pass on the existing source — no preemptive `.m` edits are required.
+
+### Decision 6: Coverage data uploaded as a CI artifact
 
 Storing `coverage.txt` (LCOV summary) as an actions/upload-artifact gives reviewers a quick diff of which lines went from covered → uncovered in a PR. No third-party coverage service (Codecov, Coveralls) is wired up by this change — that's a separate "send coverage upstream" decision.
 

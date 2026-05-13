@@ -1,7 +1,7 @@
 # rate-matching Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines subblock interleaving (TS36.212 §5.1.4.1.1) across three interleaver indices and the circular buffer with redundancy versions 0–3 and optional limited-buffer rate matching (§5.1.4.1.2), combined into the bit-pattern-invertible `rate_matching` operation used by the encoder and inverted by the decoder.
 ## Requirements
 ### Requirement: Subblock interleaving with three indices
 
@@ -33,9 +33,13 @@ The system SHALL implement the circular buffer of §5.1.4.1.2 of TS36.212. The b
 
 The implementation SHALL raise an error if `v` does not have 3 rows, if `K_Pi` is not a multiple of 32, or if `rv_idx ∉ {0, 1, 2, 3}`.
 
-#### Scenario: Redundancy versions select different starting offsets
-- **WHEN** the circular buffer is invoked with the same `v`, `N_ref`, `I_LBRM`, and `E` but different `rv_idx` values
+#### Scenario: Redundancy versions select different starting offsets (no LBRM)
+- **WHEN** the circular buffer is invoked with `I_LBRM = 0` (so `N_cb = K_w = 3 * K_Pi`) and the same `v` and `E` but different `rv_idx` values
 - **THEN** the four `rv_idx` values produce four distinct starting offsets `k_0` (modulo `N_cb`)
+
+#### Scenario: Redundancy version offset matches the standard formula
+- **WHEN** the circular buffer computes its starting offset for a given `(N_cb, R_TC_subblock, rv_idx)`
+- **THEN** the value of `k_0` equals `R_TC_subblock * (2 * ceil(N_cb / (8 * R_TC_subblock)) * rv_idx + 2)` (note: under LBRM with a small `N_ref`, distinct `rv_idx` values MAY collapse to the same `k_0` modulo `N_cb` — this is the standard's behavior, not a defect)
 
 #### Scenario: Filler bits are skipped
 - **WHEN** the circular buffer reads from a window that contains `NaN` filler entries

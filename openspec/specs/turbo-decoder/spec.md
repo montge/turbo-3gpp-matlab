@@ -1,7 +1,7 @@
 # turbo-decoder Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the iterative Log-BCJR decoder for the rate-1/3 turbo code, including the constituent Log-BCJR over the 8-state trellis, the `maxstar` Jacobian-logarithm operator (exact and approximate modes), configurable half-iteration counts, optional HARQ LLR accumulation, and CRC-driven early termination.
 ## Requirements
 ### Requirement: maxstar Jacobian logarithm with exact and approximate modes
 
@@ -64,7 +64,11 @@ The decoder SHALL raise an error if `size(d_a, 1) != 3`, if `length(pi) != size(
 - **WHEN** `turbo_decoder` is called with `max_iterations = 0.5`
 - **THEN** the decoder performs exactly the upper half iteration and returns
 
-#### Scenario: Invalid iteration count
+#### Scenario: Invalid iteration count (not multiple of 0.5)
 - **WHEN** `turbo_decoder` is called with `max_iterations` that is not a multiple of 0.5
+- **THEN** the call raises an error
+
+#### Scenario: Invalid iteration count (negative value)
+- **WHEN** `turbo_decoder` is called with `max_iterations < 0`
 - **THEN** the call raises an error
 

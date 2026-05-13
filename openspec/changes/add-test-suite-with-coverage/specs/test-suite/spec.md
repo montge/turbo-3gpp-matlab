@@ -21,7 +21,7 @@ The system SHALL provide a test suite that runs unmodified on both MATLAB (R2020
 The system SHALL provide test files under `tests/` organized as:
 
 - `tests/test_<source>.m` for each source `.m` file in the repository root (mirroring the source filename), containing per-scenario assertions in MOxUnit's `function test_suite = test_<name>` form.
-- `tests/property/test_<capability>_properties.m` for property-based tests indexed by OpenSpec capability name (`crc`, `internal-interleaver`, `turbo-encoder`, etc.), where each test sweeps a parameter space (multiple `K`, multiple `rv_idx`, multiple `Q_m`).
+- `tests/property/test_<capability_snake>_properties.m` for property-based tests indexed by OpenSpec capability name, where `<capability_snake>` is the capability folder name (e.g. `crc`, `internal-interleaver`, `turbo-encoder`, `code-block-segmentation`) with every hyphen replaced by an underscore so the result is a valid MATLAB / Octave identifier (e.g. `test_turbo_encoder_properties.m`, `test_code_block_segmentation_properties.m`). Each test sweeps a parameter space (multiple `K`, multiple `rv_idx`, multiple `Q_m`).
 
 #### Scenario: Per-source coverage
 - **WHEN** the test directory is inspected
@@ -29,7 +29,7 @@ The system SHALL provide test files under `tests/` organized as:
 
 #### Scenario: Property catalogue exists per capability
 - **WHEN** the test directory is inspected
-- **THEN** `tests/property/` contains at least one `test_<capability>_properties.m` for each capability spec under `openspec/specs/` (with the exception of `simulation`, which is MATLAB-graphics-bound, and `octave-compatibility`, which is exercised by `test_octave_smoke.m`)
+- **THEN** `tests/property/` contains at least one `test_<capability_snake>_properties.m` (with the hyphen→underscore normalization defined above) for each capability spec under `openspec/specs/` (with the exception of `simulation`, which is MATLAB-graphics-bound, and `octave-compatibility`, which is exercised by `test_octave_smoke.m`)
 
 ### Requirement: Spec scenarios are test-traceable
 
@@ -75,6 +75,30 @@ The CI test job SHALL fail when coverage of the included set drops below **90 %*
 - **WHEN** any CI test run completes (pass or fail)
 - **THEN** `tests/coverage.txt` is available as a downloadable GitHub Actions artifact for the PR
 
+### Requirement: MISS_HIT static analysis gate
+
+The system SHALL run [MISS_HIT](https://github.com/florianschanda/miss_hit) on every CI run. The CI step SHALL:
+
+1. Install `miss_hit` via `pip install miss_hit==<pinned-version>` (version pinned in the workflow file or a `requirements-ci.txt`).
+2. Use a project-level configuration file `miss_hit.cfg` at the repository root declaring directory layout, exclusions (`tests/MOxUnit`, `node_modules`, `results`, `openspec/changes/archive`), and style rules tuned to the existing code (line length, indentation).
+3. Run `mh_style` in **fail-on-error** mode. Errors block CI; warnings are reported but do not fail the run (warning-to-error ratcheting is a future, separate change).
+4. Run `mh_lint` in **fail-on-error** mode with the same warning policy.
+5. Run `mh_metric` as informational only, writing `tests/metric.txt` and uploading it as a GitHub Actions artifact for trend analysis (no failure threshold yet).
+
+The first CI run with these gates enabled SHALL pass against the existing source `.m` files; the configuration MUST be tuned to make this true without preemptively editing those files.
+
+#### Scenario: MISS_HIT gate passes on existing code
+- **WHEN** the CI `tests` job runs `mh_style` and `mh_lint` against the existing source on `master`
+- **THEN** both tools exit 0 (errors = 0) and CI continues
+
+#### Scenario: New error fails CI
+- **WHEN** a contributor introduces a change that adds a MISS_HIT `mh_style` or `mh_lint` error (e.g. an undefined variable, a shadowed function name, syntactically invalid code)
+- **THEN** the CI `tests` job exits non-zero with the file / line / rule reported in the job output
+
+#### Scenario: Metric report uploaded
+- **WHEN** any CI test run completes
+- **THEN** `tests/metric.txt` (per-file complexity metrics from `mh_metric`) is uploaded as a downloadable GitHub Actions artifact
+
 ### Requirement: CI test job integration
 
 The repository's `.github/workflows/ci.yml` SHALL include a `tests` job that:
@@ -85,7 +109,8 @@ The repository's `.github/workflows/ci.yml` SHALL include a `tests` job that:
 4. Runs the MOxUnit suite via a `scripts/run_tests.sh` (or equivalent) entry point.
 5. Runs the spec-to-test traceability check.
 6. Runs MOcov coverage measurement and gates at 90 %.
-7. Uploads `tests/coverage.txt` as an artifact.
+7. Runs MISS_HIT (`mh_style`, `mh_lint`, `mh_metric`) per the MISS_HIT requirement above.
+8. Uploads `tests/coverage.txt` and `tests/metric.txt` as artifacts.
 
 #### Scenario: CI tests job present
 - **WHEN** the repository's CI configuration is inspected

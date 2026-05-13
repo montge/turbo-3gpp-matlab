@@ -30,7 +30,7 @@
 ## 5. TLA+ HARQ model
 
 - [ ] 5.1 Add `proofs/tla/harq.tla` declaring state variables (`rv_idx_sequence`, `attempt`, `decoded`, `buffer`) and actions (`EncodeAndTransmit`, `Channel`, `DecodeAndCheck`, `AdvanceRv`)
-- [ ] 5.2 State invariants: `CRCPassImpliesCorrect` and `EventualTermination`
+- [ ] 5.2 State the safety invariant `CRCPassImpliesSyndromeZero` and the *liveness* property `EventualTermination` (the latter is a temporal property, not a state invariant, and SHALL be checked separately with TLC's `-property` flag rather than `-invariant`)
 - [ ] 5.3 Add `proofs/tla/harq.cfg` bounding `Len(rv_idx_sequence) = 4`, `A = 16`, channel non-determinism cardinality
 - [ ] 5.4 Run TLC locally against the safety invariant and confirm it completes without finding a counterexample
 - [ ] 5.5 Run TLC against `EventualTermination` and confirm liveness holds

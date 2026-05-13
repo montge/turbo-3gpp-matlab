@@ -9,7 +9,8 @@ This change introduces a proper test suite with measurable coverage so future co
 - Vendor [MOxUnit](https://github.com/MOxUnit/MOxUnit) as `tests/MOxUnit/` (git submodule or pinned tarball — design.md decides) so the test runner works identically on MATLAB and GNU Octave.
 - Add a `tests/` directory with one `test_<source>.m` per source file in the repo root, plus a `tests/property/` subdirectory for property-based tests that sweep parameter spaces.
 - Add MOcov-driven line-coverage measurement and require **≥ 90 % line coverage** of the source `.m` files (excluding `tests/`, `+matlab/`, and the simulation drivers which are graphical/MATLAB-only).
-- Extend `.github/workflows/ci.yml` with a new `tests` job that runs the suite on Octave 8.4 and fails CI if the coverage gate is missed.
+- Add [MISS_HIT](https://github.com/florianschanda/miss_hit) static analysis (`mh_style` + `mh_lint` + `mh_metric`) so style and lint defects are caught at PR time on both MATLAB and Octave `.m` files.
+- Extend `.github/workflows/ci.yml` with a new `tests` job that runs the suite on Octave 8.4, the MISS_HIT analyzers, and fails CI if the coverage gate or the MISS_HIT error checks are missed.
 - Add a `tests/coverage.txt` artifact uploaded by CI so coverage trends are visible per-PR.
 
 ## Capabilities

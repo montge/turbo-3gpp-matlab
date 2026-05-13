@@ -9,7 +9,7 @@ Formal verification raises those gaps from "tested on N samples" to "proved over
 - Add a `proofs/lean/` directory containing Lean 4 modules that prove three mathematical claims:
   1. **CRC equivalence**: `mod(a * G_max, 2)` produces the same bit vector as polynomial division by `crc_polynomial_pattern` for all four 3GPP polynomials and any input `A`.
   2. **QPP interleaver bijection**: for each of the 188 supported `K` values, `pi(i) = mod(f1*i + f2*i², K)` is a bijection from `{0, …, K-1}` to itself. This is decidable by direct computation per `K`; Lean reflects the table and discharges each case.
-  3. **Constituent encoder zero-state termination**: starting from `(s1, s2, s3) = (0, 0, 0)` and applying the three termination steps (`s1' = 0; s2' = s1; s3' = s2`) drives the shift register to `(0, 0, 0)` regardless of prior state.
+  3. **Constituent encoder zero-state termination**: applying the three termination steps (`s1' = 0; s2' = s1; s3' = s2`) drives the shift register to `(0, 0, 0)` regardless of the prior state `(s1, s2, s3)`.
 - Add a `proofs/tla/` directory containing a TLA+ / TLC model `harq.tla` for the HARQ retransmission protocol, with:
   - State variables for `rv_idx`, the decoder LLR buffer, the CRC status, and the retransmission counter.
   - Actions for "encode-and-transmit", "channel-noise", "decode-and-check", "advance-rv_idx".

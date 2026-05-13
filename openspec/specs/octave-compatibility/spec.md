@@ -1,14 +1,14 @@
 # octave-compatibility Specification
 
 ## Purpose
-TBD - created by archiving change backport-3gpp-turbo-baseline. Update Purpose after archive.
+Defines the minimal `matlab.System` shim under `+matlab/System.m` plus the `test_octave_smoke.m` round-trip script that together let the turbo encoder, decoder, and coding-chain classes run unmodified on GNU Octave 8.4+.
 ## Requirements
 ### Requirement: matlab.System shim for Octave
 
 The system SHALL provide a GNU Octave-compatible `matlab.System` base class under `+matlab/System.m` so that the existing `classdef turbo_coding_chain < matlab.System` (and its subclasses) instantiate and execute under Octave without modification to any existing `.m` file. The shim SHALL implement, at minimum:
 
 - A constructor that accepts no arguments and produces a configurable object.
-- A `setProperties(obj, nargin, varargin{:})` method that copies any `'Name', Value` pairs in `varargin` onto the corresponding object property, calling the property's set-method if one exists.
+- A `setProperties(obj, n_args, varargin)` method that copies any `'Name', Value` pairs in `varargin` onto the corresponding object property, calling the property's set-method if one exists. The expected calling convention is `setProperties(obj, nargin, varargin{:})` from the subclass constructor — `nargin` is the MATLAB intrinsic evaluated at the constructor's call site (it equals the number of arguments the constructor received), and `varargin{:}` expands the constructor's variadic arguments. `setProperties` uses the passed-in count to iterate the name/value pairs. This is the established matlab.System idiom; subclasses do NOT manually pass the count.
 - A `step(obj, varargin{:})` method that:
   - On its first call (or the first call after `release`), invokes `setupImpl(obj)` on the subclass, then `processTunedPropertiesImpl(obj)`.
   - On every call, dispatches to `stepImpl(obj, varargin{:})` and returns its outputs.
