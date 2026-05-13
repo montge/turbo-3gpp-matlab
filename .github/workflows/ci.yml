@@ -78,8 +78,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install MISS_HIT
-        run: pip install --quiet miss_hit==0.9.42
+      - name: Install MISS_HIT and defusedxml
+        # defusedxml hardens scripts/coverage_gate.py's XML parsing against
+        # billion-laughs / quadratic-blowup DoS. The script also falls back to
+        # the stdlib parser when defusedxml is unavailable.
+        run: pip install --quiet miss_hit==0.9.42 defusedxml==0.7.1
 
       - name: Run MOxUnit suite (unit + property tests)
         run: bash scripts/run_tests.sh
