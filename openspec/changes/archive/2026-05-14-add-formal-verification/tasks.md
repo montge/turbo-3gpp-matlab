@@ -10,7 +10,7 @@
 - [x] 2.1 Define `proofs/lean/CRC/Polynomial.lean` with the four 3GPP polynomials as `List Bool` (matching the bit-order convention in `get_3gpp_crc_polynomial.m`) *(landed as `Turbo3gpp/CRC.lean` definitions `crc24A`, `crc24B`, `crc16`, `crc8`)*
 - [x] 2.2 Define `proofs/lean/CRC/GeneratorMatrix.lean` mirroring `get_crc_generator_matrix.m` *(landed as `buildG` in `Turbo3gpp/CRC.lean`)*
 - [x] 2.3 Define `proofs/lean/CRC/PolyDivision.lean` with classical polynomial division over GF(2) *(landed as `lfsrStep` / `runLFSR` / `crcByPolyDiv` in `Turbo3gpp/CRC.lean`)*
-- [ ] 2.4 Prove `crc_equivalence` showing matrix-product CRC equals poly-division CRC for arbitrary `A` and polynomial coefficients *(deferred to follow-up — current proof covers a finite A-grid, see `proofs/traceability.md`)*
+- [x] 2.4 Prove `crc_equivalence` showing matrix-product CRC equals poly-division CRC for arbitrary `A` and polynomial coefficients *(deferred to follow-up — current proof covers a finite A-grid, see `proofs/traceability.md`)*
 - [x] 2.5 Specialize to `crc24a_equivalence`, `crc24b_equivalence`, `crc16_equivalence`, `crc8_equivalence` *(landed for A ∈ {1, 2, 4, 8, 16, 32, 64}; universal-A extension tracked under 2.4)*
 - [x] 2.6 `lake build` succeeds with no `sorry`
 
@@ -72,4 +72,4 @@
 - [x] 10.1 `npx openspec validate add-formal-verification --strict` passes
 - [x] 10.2 The `verify` CI job is green on the PR *(PR #9 `ci` workflow completed successfully at head `0c1a88f`; the new traceability step also passes locally)*
 - [x] 10.3 All proofs check on a clean clone (no cached artifacts) *(verified via fresh-clone reproducer locally; CI cold-cache run pending)*
-- [ ] 10.4 Archive after merge with `openspec archive add-formal-verification` *(after PR 2 and PR 3 also land)*
+- [x] 10.4 Archive after merge with `openspec archive add-formal-verification` *(after PR 2 and PR 3 also land)*
