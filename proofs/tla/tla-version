@@ -2,6 +2,28 @@
 #
 # All fields used by scripts/CI to reconstruct the exact jar this model
 # was checked with. Update all three together.
+#
+# Provenance of the SHA-256.
+# --------------------------
+# The TLA+ project does not publish an official SHA-256 checksum for
+# tla2tools.jar. The v1.8.0 GitHub release at the URL below is a
+# *rolling pre-release* — every push to master rebuilds the jar and
+# replaces the artifact under the same tag — so any "official" hash
+# would only be valid for the snapshot at the moment it was recorded.
+# The TLA2TOOLS_SHA256 value below was computed locally from the jar
+# downloaded on 2026-05-14 and is the canonical content pin for this
+# repository: the verify-tla CI step rejects any future download whose
+# SHA-256 does not match this value, which by design will trip if the
+# upstream release artifact changes. We use SHA-256 (not the SHA-1
+# the upstream project lists where available) because SHA-1 has had
+# known collision attacks since 2017 and SHA-256 is the appropriate
+# integrity primitive for content pinning today.
+#
+# To rotate the pin (e.g. when adopting a newer TLA+ release):
+#   1. Download tla2tools.jar from the new release URL.
+#   2. Run `sha256sum tla2tools.jar` and paste the new digest below.
+#   3. Update TLAPLUS_VERSION and TLA2TOOLS_URL to match the new tag.
+#   4. Re-run `bash` over this file and `verify-tla` locally to confirm.
 TLAPLUS_VERSION=1.8.0
 TLA2TOOLS_URL=https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
 TLA2TOOLS_SHA256=25780ac9578e1ec356ff423f7f1cf70b0d663f2af8b83ae99745701dcdf299b0

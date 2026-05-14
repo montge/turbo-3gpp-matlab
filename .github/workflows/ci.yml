@@ -238,8 +238,9 @@ jobs:
         working-directory: proofs/tla
         run: |
           set -euo pipefail
-          # -tool emits machine-readable progress; -workers auto-parallelises
-          # over the runner's available cores.
+          # -workers auto parallelises model checking over the runner's
+          # available cores; -XX:+UseParallelGC silences TLC's startup
+          # warning about the JVM garbage collector choice.
           java -XX:+UseParallelGC -cp "$HOME/.tla/tla2tools.jar" tlc2.TLC \
               -config harq.cfg \
               -workers auto \
