@@ -47,7 +47,11 @@ function e = rate_matching(d, N_ref, I_LBRM, rv_idx, E)
 % FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
 % more details.
 
+if size(d,1) ~= 3
+    error('rate_matching:bad_d_rows', ...
+        'Expected d to have 3 rows; got %d.', size(d,1));
+end
+
 v = [subblock_interleaver(d(1,:), 0); subblock_interleaver(d(2,:), 1); subblock_interleaver(d(3,:), 2)];
 e = circular_buffer(v, N_ref, I_LBRM, rv_idx, E);
-
 

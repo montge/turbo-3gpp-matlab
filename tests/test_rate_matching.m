@@ -1,6 +1,7 @@
 function test_suite = test_rate_matching
     % Scenarios covered (rate-matching/spec.md):
-    %   Encode -> derate matches round-trip in the noise-free case
+    %   Encode -> derate matches round-trip in the noise-free case,
+    %   Invalid rate-matching input row count
     try
         test_functions = localfunctions(); %#ok<NASGU>
     catch
@@ -56,3 +57,8 @@ function test_output_length_equals_e
     E = 96;
     e = rate_matching(d_idx, 0, 0, 0, E);
     assertEqual(numel(e), E);
+
+function test_rejects_wrong_row_count
+    d_bad = zeros(2, 44);
+    assertExceptionThrown(@() rate_matching(d_bad, 0, 0, 0, 96), ...
+        'rate_matching:bad_d_rows');
