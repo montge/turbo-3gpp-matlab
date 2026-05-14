@@ -257,7 +257,11 @@ jobs:
 
   verify-cryptol:
     name: Cryptol/SAW CRC equivalence (proofs/cryptol)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 because the SAW tarball in proofs/cryptol/
+    # version.txt targets that release explicitly. `ubuntu-latest` would
+    # drift to a newer image when GitHub bumps it, breaking binary
+    # compatibility with the cached toolchain.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
