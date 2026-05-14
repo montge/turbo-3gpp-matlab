@@ -2,6 +2,10 @@
 
 ## Purpose
 Defines the rate-1/3 parallel-concatenated convolutional encoder of TS36.212 §5.1.3.2, including the 3-memory recursive systematic constituent encoder (generator `[1,1,0,1]`, feedback `[1,0,1,1]`), the 3-step trellis termination, and the `3 × (K + 4)` output-bit layout that places systematic and parity bits across both constituent codes.
+
+## Formal Verification
+The constituent-encoder termination proof obligation is mapped in [`proofs/traceability.md`](../../../proofs/traceability.md#lean-4-pr-1), including the Lean proof that the three trellis-termination steps force the shift-register state to zero.
+
 ## Requirements
 ### Requirement: Recursive systematic convolutional constituent encoder
 
@@ -48,4 +52,3 @@ The system SHALL provide a rate-1/3 turbo encoder, defined in §5.1.3.2 of TS36.
 #### Scenario: Filler bit propagation
 - **WHEN** the input code block has `NaN` entries representing filler bits
 - **THEN** rows 1 and 2 of the corresponding columns of the output equal `NaN`, and row 3 contains the parity bit produced by treating the filler as zero
-

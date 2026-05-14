@@ -2,6 +2,10 @@
 
 ## Purpose
 Defines the top-level `turbo_coding_chain` base class that owns all derived parameters (`B`, `C`, `K_r`, `D_r`, `E_r`, `N_ref`, …) and the system-object API (`step`, `reset`, `release`, name-value construction), plus its `turbo_encoding_chain` and `turbo_decoding_chain` subclasses that compose CRC, segmentation, encoding, rate matching, decoding, and optional HARQ accumulation.
+
+## Formal Verification
+HARQ protocol proof obligations are mapped in [`proofs/traceability.md`](../../../proofs/traceability.md#tla--tlc-pr-2), including the TLA+/TLC safety and bounded-liveness checks for CRC-gated decode success and retransmission termination.
+
 ## Requirements
 ### Requirement: turbo_coding_chain base class owns derived parameters
 
@@ -92,4 +96,3 @@ The decoder SHALL also return `iterations_performed`, a length-`C` row vector of
 #### Scenario: Decode rejects wrong-length input
 - **WHEN** `step(obj, f)` is called with `length(f) != obj.G`
 - **THEN** the call raises an error citing the expected length `G` and the actual length
-
