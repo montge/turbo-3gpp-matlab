@@ -320,3 +320,12 @@ jobs:
               exit 1
           fi
           grep -q 'All four CRC equivalence goals discharged.' saw.out
+
+  verify-traceability:
+    name: Proof traceability matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Proof traceability check
+        run: python3 scripts/check_proof_traceability.py

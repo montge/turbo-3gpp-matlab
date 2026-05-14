@@ -2,6 +2,10 @@
 
 ## Purpose
 Defines the Quadratic Permutation Polynomial (QPP) interleaver from TS36.212 §5.1.3.2.3 over the 188 supported information-block lengths `K ∈ {40, …, 6144}`, including the standardized `(K, f1, f2)` constants table and the permutation formula `pi(i) = mod(f1 * i + f2 * i², K)`.
+
+## Formal Verification
+The QPP bijection proof obligation is mapped in [`proofs/traceability.md`](../../../proofs/traceability.md#lean-4-pr-1), including the Lean proof that the supported-table permutation is bijective for every one of the 188 `K` values.
+
 ## Requirements
 ### Requirement: QPP interleaver for all 188 supported block lengths
 
@@ -22,4 +26,3 @@ The system SHALL implement the Quadratic Permutation Polynomial (QPP) interleave
 #### Scenario: Unsupported block length
 - **WHEN** `internal_interleaver` is called with an input whose length is not in the supported `K` set (e.g. 41)
 - **THEN** the call raises an error
-

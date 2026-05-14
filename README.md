@@ -3,6 +3,7 @@
 [![CI](https://github.com/montge/turbo-3gpp-matlab/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/montge/turbo-3gpp-matlab/actions/workflows/ci.yml)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![OpenSpec](https://img.shields.io/badge/spec--driven-OpenSpec-6f42c1.svg)](https://github.com/Fission-AI/OpenSpec)
+[![Formal verification](https://img.shields.io/badge/formal--verification-Lean%204%20%7C%20TLA%2B%20%7C%20Cryptol%2FSAW-2ea44f.svg)](proofs/README.md)
 [![Octave 8.4 tested](https://img.shields.io/badge/GNU%20Octave-8.4%2B-1f425f.svg)](https://www.gnu.org/software/octave/)
 
 MATLAB simulations of the encoder and decoder for the LTE turbo code from 3GPP Release 15 (TS36.212).
@@ -52,6 +53,12 @@ Check that every `#### Scenario:` block in the OpenSpec capability specs has at 
 
 ```bash
 python3 scripts/check_spec_traceability.py
+```
+
+Check that every Lean, TLA+, and Cryptol proof source is listed in the formal verification traceability matrix:
+
+```bash
+python3 scripts/check_proof_traceability.py
 ```
 
 CI uploads `tests/coverage.txt`, `tests/coverage.xml`, and `tests/metric.txt` as the `test-artifacts` artifact on every run (pass or fail) so you can review per-PR coverage trends.

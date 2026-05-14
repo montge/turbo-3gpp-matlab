@@ -2,6 +2,10 @@
 
 ## Purpose
 Defines the four 3GPP CRC polynomials (CRC24A, CRC24B, CRC16, CRC8) from TS36.212 §5.1.1, generator-matrix construction from those polynomials, and the calculate / generate-and-append / check-and-remove operations used at both the transport-block and code-block layers.
+
+## Formal Verification
+CRC proof obligations are mapped in [`proofs/traceability.md`](../../../proofs/traceability.md#lean-4-pr-1), including the Lean CRC equivalence proof and the independent Cryptol/SAW bit-level equivalence proof.
+
 ## Requirements
 ### Requirement: 3GPP CRC polynomial selection
 
@@ -62,4 +66,3 @@ The system SHALL provide three CRC operations on bit vectors that all use the sa
 #### Scenario: Generator matrix smaller than input
 - **WHEN** `calculate_crc_bits(a, G_max)` is called with `size(G_max, 1) < length(a)`
 - **THEN** the call raises an error (it MUST NOT silently truncate `a` or perform out-of-range indexing)
-
