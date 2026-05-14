@@ -47,7 +47,7 @@ LEAN_PATH=.lake/build/lib lean --root=. <(echo '
 
 Expected output:
 
-```
+```text
 '...termination_reaches_zero_state' does not depend on any axioms
 '...qpp_bijection_for_supported_K' depends on axioms: [propext, Lean.ofReduceBool]
 '...crc24A_equivalence' depends on axioms: [propext, Lean.ofReduceBool, Quot.sound]

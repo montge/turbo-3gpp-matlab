@@ -30,20 +30,23 @@ over GF(2):
 
 We make this rigorous by:
 
-1. Defining one canonical CRC function (`crcLFSR`) as the LFSR
+1. Defining one canonical CRC function (`crcByPolyDiv`) as the LFSR
    computation.
-2. Defining the matrix construction (`buildG`) to mirror the MATLAB code
-   exactly.
-3. Proving the matrix and the LFSR agree on every input via structural
-   induction over the input length `A`.
+2. Defining the matrix construction (`buildG`) to mirror the MATLAB code.
+3. Checking agreement between `crcByMatrix` and `crcByPolyDiv` on a
+   finite representative grid of input lengths `A ∈ {1, 2, 4, 8, 16, 32,
+   64}` and the standard basis vectors of `Bool^A` (plus all-zeros and
+   all-ones). Both sides are GF(2)-linear in `a`, so basis agreement at
+   a given `A` implies agreement on every `a ∈ Bool^A` for that `A`.
 
-The polynomial-division side is captured by `crcLFSR` itself — it IS the
-shift-register form of polynomial division. We then state the headline
-equivalence `crcByMatrix_eq_crcLFSR` as the matrix-vs-polynomial-division
-identity that the OpenSpec requirement names.
+This module currently establishes the **finite-grid** equivalence
+above. The universal-`A` statement asked for by the OpenSpec scenario
+("any natural number A ≥ 1") needs an auxiliary LFSR-linearity lemma
+plus a structural induction over the input list; that strengthening is
+tracked as a follow-up in `proofs/traceability.md`.
 
 This proof requires no mathlib: everything is finite list operations over
-`Bool`, proven by induction and `decide` where applicable.
+`Bool`, discharged by `native_decide` over the grid.
 -/
 
 namespace Turbo3gpp.CRC
