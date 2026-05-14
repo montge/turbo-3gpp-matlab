@@ -128,15 +128,27 @@ jobs:
           TOOLCHAIN="$(tr -d '[:space:]' < proofs/lean/lean-toolchain)"
           VERSION="${TOOLCHAIN##*:}"        # v4.14.0
           VERSION_NUM="${VERSION#v}"        # 4.14.0
-          # 1) Install elan itself.
+          echo "Pinned toolchain: $TOOLCHAIN  (version $VERSION_NUM)"
+
+          # 1) Install elan itself. The -y skips the interactive prompt and
+          #    --default-toolchain none avoids elan immediately trying to
+          #    fetch a default toolchain (we install the pinned one below).
+          echo "::group::Install elan"
           curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
-              | sh -s -- -y --default-toolchain none --quiet
+              | sh -s -- -y --default-toolchain none
+          echo "::endgroup::"
           export PATH="$HOME/.elan/bin:$PATH"
-          # 2) Try the standard elan flow first; fall back to a direct GitHub
-          #    tarball install if release.lean-lang.org is unreachable.
-          if ! elan default "$TOOLCHAIN" 2>elan.err ; then
+          elan --version
+
+          # 2) Try the standard elan flow first. Fall back to direct GitHub
+          #    tarball install if release.lean-lang.org is unreachable
+          #    (some corporate / sandbox networks block it).
+          echo "::group::Install Lean toolchain $VERSION_NUM"
+          if elan default "$TOOLCHAIN" 2>elan.err ; then
+              echo "elan default succeeded."
+          else
               echo "elan default failed; falling back to direct GitHub install:"
-              cat elan.err
+              cat elan.err || true
               sudo apt-get update
               sudo apt-get install -y --no-install-recommends zstd
               mkdir -p "$HOME/.elan/toolchains/leanprover--lean4---${VERSION}"
@@ -145,7 +157,9 @@ jobs:
                   -C "$HOME/.elan/toolchains/leanprover--lean4---${VERSION}"
               elan default "$TOOLCHAIN"
           fi
-          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+          echo "::endgroup::"
+
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
       - name: Add elan to PATH for cached toolchain
         if: steps.cache-lean.outputs.cache-hit == 'true'
