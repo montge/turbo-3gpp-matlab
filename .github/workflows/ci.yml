@@ -201,3 +201,56 @@ jobs:
               exit 1
           fi
           echo "Axiom audit passed."
+
+  verify-tla:
+    name: TLA+ HARQ model (proofs/tla)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned TLA+ version
+        id: tla-pin
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source proofs/tla/tla-version
+          echo "version=$TLAPLUS_VERSION"   >> "$GITHUB_OUTPUT"
+          echo "url=$TLA2TOOLS_URL"         >> "$GITHUB_OUTPUT"
+          echo "sha256=$TLA2TOOLS_SHA256"   >> "$GITHUB_OUTPUT"
+
+      - name: Cache tla2tools.jar
+        id: cache-tla
+        uses: actions/cache@v4
+        with:
+          path: ~/.tla
+          key: tla-${{ steps.tla-pin.outputs.version }}-${{ steps.tla-pin.outputs.sha256 }}
+
+      - name: Download and verify tla2tools.jar
+        if: steps.cache-tla.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.tla"
+          curl -L "${{ steps.tla-pin.outputs.url }}" -o "$HOME/.tla/tla2tools.jar"
+          echo "${{ steps.tla-pin.outputs.sha256 }}  $HOME/.tla/tla2tools.jar" \
+              | sha256sum -c -
+
+      - name: TLC model check (safety invariants + EventualTermination)
+        working-directory: proofs/tla
+        run: |
+          set -euo pipefail
+          # -workers auto parallelises model checking over the runner's
+          # available cores; -XX:+UseParallelGC silences TLC's startup
+          # warning about the JVM garbage collector choice.
+          java -XX:+UseParallelGC -cp "$HOME/.tla/tla2tools.jar" tlc2.TLC \
+              -config harq.cfg \
+              -workers auto \
+              harq.tla | tee tlc.out
+          # Guard against false-positive exits: TLC exits 0 even when it
+          # finds a counterexample to a property unless the property is
+          # configured as INVARIANT-with-violation. Belt-and-braces grep:
+          # any "Error:" line means model checking found a problem.
+          if grep -qE '^Error:' tlc.out ; then
+              echo "ERROR: TLC reported an error in the harq model." >&2
+              exit 1
+          fi
+          grep -q 'Model checking completed. No error has been found.' tlc.out

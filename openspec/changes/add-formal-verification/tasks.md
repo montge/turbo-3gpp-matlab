@@ -29,12 +29,12 @@
 
 ## 5. TLA+ HARQ model
 
-- [ ] 5.1 Add `proofs/tla/harq.tla` declaring state variables (`rv_idx_sequence`, `attempt`, `decoded`, `buffer`) and actions (`EncodeAndTransmit`, `Channel`, `DecodeAndCheck`, `AdvanceRv`)
-- [ ] 5.2 State the safety invariant `CRCPassImpliesSyndromeZero` and the *liveness* property `EventualTermination` (the latter is a temporal property, not a state invariant, and SHALL be checked separately with TLC's `-property` flag rather than `-invariant`)
-- [ ] 5.3 Add `proofs/tla/harq.cfg` bounding `Len(rv_idx_sequence) = 4`, `A = 16`, channel non-determinism cardinality
-- [ ] 5.4 Run TLC locally against the safety invariant and confirm it completes without finding a counterexample
-- [ ] 5.5 Run TLC against `EventualTermination` and confirm liveness holds
-- [ ] 5.6 Pin `tla2tools.jar` SHA in a `proofs/tla/tla-version` file
+- [x] 5.1 Add `proofs/tla/harq.tla` declaring state variables (`rv_idx_sequence`, `attempt`, `decoded`, `buffer`) and actions (`EncodeAndTransmit`, `Channel`, `DecodeAndCheck`, `AdvanceRv`) *(plus an explicit `phase` state variable enforcing per-attempt sequencing, and a `Stutter` action for the terminal-state liveness check)*
+- [x] 5.2 State the safety invariant `CRCPassImpliesSyndromeZero` and the *liveness* property `EventualTermination` (the latter is a temporal property, not a state invariant, and SHALL be checked separately with TLC's `-property` flag rather than `-invariant`) *(plus `TypeOK` and `DoneIsExplicit` as supplementary invariants)*
+- [x] 5.3 Add `proofs/tla/harq.cfg` bounding `Len(rv_idx_sequence) = 4`, `A = 16`, channel non-determinism cardinality *(via `RvIdxSeqDefault = <<0, 2, 3, 1>>` and `InformationBlocksDefault = {1, 2}`)*
+- [x] 5.4 Run TLC locally against the safety invariant and confirm it completes without finding a counterexample *(72 states generated, 48 distinct; all three invariants hold)*
+- [x] 5.5 Run TLC against `EventualTermination` and confirm liveness holds *(checked in the same TLC invocation; "Model checking completed. No error has been found.")*
+- [x] 5.6 Pin `tla2tools.jar` SHA in a `proofs/tla/tla-version` file *(TLA+ 1.8.0, sha256 `25780ac9...`)*
 
 ## 6. Cryptol / SAW CRC equivalence
 
@@ -54,10 +54,10 @@
 
 - [x] 8.1 Add a `verify` job to `.github/workflows/ci.yml` *(landed as `verify-lean`; `verify-tla` follows in PR 2, `verify-cryptol` in PR 3)*
 - [x] 8.2 Install Lean via `leanprover/lean-action@v1` (or `elan curl install`) with cache keyed on `lean-toolchain` *(landed via the elan installer with a GitHub-tarball fallback for restricted-network runners)*
-- [ ] 8.3 Download and cache `tla2tools.jar` at the pinned SHA
+- [x] 8.3 Download and cache `tla2tools.jar` at the pinned SHA *(actions/cache@v4 keyed on `tla-version` + SHA; verify against `tla-version` after download)*
 - [ ] 8.4 Install Cryptol + SAW via pinned binary release; cache `~/.cabal` or equivalent if needed
 - [x] 8.5 Step: `cd proofs/lean && lake build`
-- [ ] 8.6 Step: `cd proofs/tla && java -jar $TLA_JAR -config harq.cfg harq.tla`
+- [x] 8.6 Step: `cd proofs/tla && java -jar $TLA_JAR -config harq.cfg harq.tla` *(with `-workers auto` and `-XX:+UseParallelGC`; grep-asserts "No error has been found" and no `^Error:` line)*
 - [ ] 8.7 Step: `cd proofs/cryptol && saw crc_3gpp.saw`
 - [ ] 8.8 Step: run the traceability check
 
