@@ -26,5 +26,5 @@
 
 - [x] 5.1 Run `npx openspec validate --all --strict`.
 - [x] 5.2 Run `npm test`.
-- [ ] 5.3 Confirm CI is green on the PR.
+- [x] 5.3 Confirm CI is green on the PR.
 - [ ] 5.4 Archive after merge.
