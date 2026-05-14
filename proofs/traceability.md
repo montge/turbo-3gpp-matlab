@@ -15,12 +15,13 @@ top-to-bottom without opening every proof file.
 | ✅ | `proofs/lean/Turbo3gpp/CRC.lean` | `Turbo3gpp.CRC.crc{24A,24B,16,8}_equivalence` | `openspec/specs/crc/spec.md` (CRC calculation requirement) | "Generator matrix shape", "Generator matrix sized larger than input", "CRC append round-trips with check" — matrix-product CRC ≡ polynomial-division CRC over a finite A-grid (1, 2, 4, 8, 16, 32, 64). Universal-A statement tracked as a follow-up; the algebraic argument is the standard "matrix is a precomputed LFSR" but takes ~200 more lines of stdlib Lean. |
 | ✅ | `proofs/lean/Turbo3gpp/Interleaver.lean` (`table` constant) | `Turbo3gpp.Interleaver.table_has_188_entries` | `openspec/specs/internal-interleaver/spec.md` | "All 188 K values covered" — the 188 (K, f1, f2) triples in `table` match the table embedded in `internal_interleaver.m` (length check + per-row review against source). |
 
-## TLA+ / TLC (PR 2 — pending)
+## TLA+ / TLC (PR 2)
 
 | Status | Proof artifact | Property | OpenSpec spec | Spec scenario(s) discharged |
 |---|---|---|---|---|
-| ⏳ | `proofs/tla/harq.tla` (`CRCPassImpliesSyndromeZero`) | safety invariant | `openspec/specs/coding-chain/spec.md` (Decoding chain / HARQ requirement) | "HARQ accumulation" + the implicit "decoder declares success ⇒ CRC = 0" assertion |
-| ⏳ | `proofs/tla/harq.tla` (`EventualTermination`) | bounded liveness | `openspec/specs/coding-chain/spec.md` | "HARQ accumulation" (loop terminates within `Len(rv_idx_sequence) + 1` steps) |
+| ✅ | `proofs/tla/harq.tla` (`CRCPassImpliesSyndromeZero`) | safety invariant — every state with `decoded /= NULL` satisfies `crcZero(decoded)` | `openspec/specs/coding-chain/spec.md` (Decoding chain / HARQ requirement) | "HARQ accumulation" — the implicit "decoder declares success ⇒ CRC = 0" assertion; checked by TLC over a 4-RV / 2-tag state space (~70 states). |
+| ✅ | `proofs/tla/harq.tla` (`TypeOK`, `DoneIsExplicit`) | structural invariants | `openspec/specs/coding-chain/spec.md` | Ratifies that the model's state-space bounds and the "done = success-or-exhausted" condition hold for every reachable state. |
+| ✅ | `proofs/tla/harq.tla` (`EventualTermination`) | bounded liveness — `<>[](phase = "done")` | `openspec/specs/coding-chain/spec.md` | "HARQ accumulation" — every trace eventually settles in `phase = done`, which by `DoneIsExplicit` means either `decoded /= NULL` or `attempt = Len(RvIdxSequence) + 1`. No infinite-retransmission cycles. |
 
 ## Cryptol / SAW (PR 3 — pending)
 
@@ -31,6 +32,6 @@ top-to-bottom without opening every proof file.
 ## Follow-ups tracked here
 
 - **CRC universal-A statement.** The Lean proof currently covers `A ∈ {1, 2, 4, 8, 16, 32, 64}` per polynomial via `native_decide`. Extending to "any natural number A ≥ 1" needs an auxiliary GF(2)-linearity lemma about the LFSR run plus a structural induction over the input list. ~200 more lines of stdlib Lean; tracked as its own change.
-- **TLA+ HARQ model** (PR 2).
 - **Cryptol/SAW CRC equivalence** (PR 3).
-- **CI verify job** currently has `verify-lean` only; PR 2 adds `verify-tla` and PR 3 adds `verify-cryptol`.
+- **CI verify job** currently has `verify-lean` + `verify-tla`; PR 3 adds `verify-cryptol`.
+- **`scripts/check_proof_traceability.py`** (tasks 7.2, 7.3) — assert every `.lean` / `.tla` / `.cry` file under `proofs/` is referenced by this file. Currently maintained by hand; a small cleanup PR will mechanise it.

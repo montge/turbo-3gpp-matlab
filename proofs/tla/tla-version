@@ -1,0 +1,7 @@
+# TLA+ toolchain pin for proofs/tla.
+#
+# All fields used by scripts/CI to reconstruct the exact jar this model
+# was checked with. Update all three together.
+TLAPLUS_VERSION=1.8.0
+TLA2TOOLS_URL=https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
+TLA2TOOLS_SHA256=25780ac9578e1ec356ff423f7f1cf70b0d663f2af8b83ae99745701dcdf299b0

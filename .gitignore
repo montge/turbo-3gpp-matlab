@@ -13,3 +13,11 @@ results/
 
 # Lean build artifacts
 proofs/lean/.lake/
+
+# TLC run artifacts (state space dumps, trace explorations)
+proofs/tla/states/
+proofs/tla/harq_TTrace_*.tla
+proofs/tla/harq_TTrace_*.bin
+proofs/tla/*.out
+proofs/tla/MC.cfg
+proofs/tla/MC.tla

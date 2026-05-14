@@ -9,7 +9,7 @@ The directory is organised by toolchain:
 | Subdirectory | Toolchain | Status |
 |---|---|---|
 | `lean/`     | Lean 4    | **landed** (PR 1) — encoder termination, QPP bijection, CRC equivalence on a finite A-grid |
-| `tla/`      | TLA+ / TLC | tracked (PR 2)  — HARQ protocol safety + bounded liveness |
+| `tla/`      | TLA+ / TLC | **landed** (PR 2) — HARQ protocol safety + bounded liveness |
 | `cryptol/`  | Cryptol + SAW | tracked (PR 3) — CRC bit-level equivalence via a translated C/Rust reference |
 
 ## Running the Lean proofs locally
@@ -73,15 +73,35 @@ elan default leanprover/lean4:v4.14.0
 This is the workaround the CI step under `.github/workflows/ci.yml` uses
 on the `verify-lean` job.
 
-## Running the TLA+ proofs locally (after PR 2)
+## Running the TLA+ proofs locally
 
-`proofs/tla/` will hold `harq.tla` + `harq.cfg` and a pinned `tla-version`.
-Run with the TLA+ Toolbox CLI:
+`proofs/tla/` holds the HARQ protocol model (`harq.tla`), its TLC
+configuration (`harq.cfg`), and the pinned `tla-version` shell file
+(`TLAPLUS_VERSION`, download URL, SHA-256). The model is checked by
+TLC 1.8.0+ over a 4-RV / 2-tag state space (~70 states, sub-second).
 
 ```bash
+# Fetch the pinned tla2tools.jar (one-time, ~4 MB).
+source proofs/tla/tla-version
+mkdir -p ~/.tla
+curl -L "$TLA2TOOLS_URL" -o ~/.tla/tla2tools.jar
+echo "$TLA2TOOLS_SHA256  $HOME/.tla/tla2tools.jar" | sha256sum -c -
+
+# Run the model checker.
 cd proofs/tla
-java -jar tla2tools.jar -config harq.cfg harq.tla
+java -XX:+UseParallelGC -cp ~/.tla/tla2tools.jar tlc2.TLC \
+    -config harq.cfg -workers auto harq.tla
 ```
+
+Expected final line:
+
+```text
+Model checking completed. No error has been found.
+```
+
+The three invariants (`TypeOK`, `CRCPassImpliesSyndromeZero`,
+`DoneIsExplicit`) and the temporal property `EventualTermination` are
+all checked in the same TLC invocation.
 
 ## Running the Cryptol / SAW proofs locally (after PR 3)
 
