@@ -254,3 +254,69 @@ jobs:
               exit 1
           fi
           grep -q 'Model checking completed. No error has been found.' tlc.out
+
+  verify-cryptol:
+    name: Cryptol/SAW CRC equivalence (proofs/cryptol)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang (for LLVM bitcode generation)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang
+
+      - name: Read pinned SAW version
+        id: saw-pin
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC1091
+          source proofs/cryptol/version.txt
+          echo "version=$SAW_VERSION"      >> "$GITHUB_OUTPUT"
+          echo "url=$SAW_TARBALL_URL"      >> "$GITHUB_OUTPUT"
+          echo "sha256=$SAW_TARBALL_SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SAW toolchain
+        id: cache-saw
+        uses: actions/cache@v4
+        with:
+          path: ~/.saw
+          key: saw-${{ steps.saw-pin.outputs.version }}-${{ steps.saw-pin.outputs.sha256 }}
+
+      - name: Download, verify, and unpack SAW
+        if: steps.cache-saw.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.saw"
+          curl -L "${{ steps.saw-pin.outputs.url }}" -o /tmp/saw.tar.gz
+          echo "${{ steps.saw-pin.outputs.sha256 }}  /tmp/saw.tar.gz" \
+              | sha256sum -c -
+          tar -xzf /tmp/saw.tar.gz -C "$HOME/.saw" --strip-components=1
+          rm /tmp/saw.tar.gz
+
+      - name: Add SAW to PATH
+        run: echo "$HOME/.saw/bin" >> "$GITHUB_PATH"
+
+      - name: Print SAW and Cryptol versions
+        run: |
+          saw --version
+          cryptol --version | head -3
+
+      - name: Compile C reference to LLVM bitcode
+        working-directory: proofs/cryptol
+        run: clang -emit-llvm -c -O0 -g calculate_crc_bits.c -o calculate_crc_bits.bc
+
+      - name: SAW proof (Cryptol spec ≡ C transliteration, A = 16, all four polys)
+        working-directory: proofs/cryptol
+        run: |
+          set -euo pipefail
+          saw crc_3gpp.saw | tee saw.out
+          # Guard: SAW prints "Proof succeeded! <name>" per discharged goal and
+          # "All four CRC equivalence goals discharged." at the very end.
+          # Belt-and-braces: bail on any line that says "Proof failed" or
+          # "Subgoal failed".
+          if grep -qE 'Proof failed|Subgoal failed|^Error:' saw.out ; then
+              echo "ERROR: SAW reported a failed proof." >&2
+              exit 1
+          fi
+          grep -q 'All four CRC equivalence goals discharged.' saw.out

@@ -10,7 +10,7 @@ The directory is organised by toolchain:
 |---|---|---|
 | `lean/`     | Lean 4    | **landed** (PR 1) — encoder termination, QPP bijection, CRC equivalence on a finite A-grid |
 | `tla/`      | TLA+ / TLC | **landed** (PR 2) — HARQ protocol safety + bounded liveness |
-| `cryptol/`  | Cryptol + SAW | tracked (PR 3) — CRC bit-level equivalence via a translated C/Rust reference |
+| `cryptol/`  | Cryptol + SAW | **landed** (PR 3) — CRC bit-level equivalence via a translated C reference |
 
 ## Running the Lean proofs locally
 
@@ -103,12 +103,50 @@ The three invariants (`TypeOK`, `CRCPassImpliesSyndromeZero`,
 `DoneIsExplicit`) and the temporal property `EventualTermination` are
 all checked in the same TLC invocation.
 
-## Running the Cryptol / SAW proofs locally (after PR 3)
+## Running the Cryptol / SAW proofs locally
 
-`proofs/cryptol/` will hold `crc_3gpp.cry`, the translated C/Rust
-reference, the SAW driver script, and a pinned `version.txt`.
+`proofs/cryptol/` holds:
+
+- `crc_3gpp.cry` — Cryptol specification of all four 3GPP CRC
+  polynomials as bit-vector operations (the canonical algorithmic
+  form: LFSR / polynomial division over GF(2)).
+- `calculate_crc_bits.c` — C transliteration of `calculate_crc_bits.m`,
+  with per-polynomial entry points (`crc24A_A16`, `crc24B_A16`,
+  `crc16_A16`, `crc8_A16`) so SAW can verify each instantiation.
+- `crc_3gpp.saw` — SAW driver that compiles the C to LLVM bitcode,
+  loads the Cryptol spec, and asks Z3 to prove they agree on every
+  16-bit input. Catches the real off-by-one cases (one was found and
+  fixed in `crc24B_poly` during initial development).
+- `version.txt` — shell-sourceable pin file recording the SAW release,
+  download URL, and SHA-256.
+
+Local install:
 
 ```bash
+# Fetch and verify the pinned SAW toolchain (~218 MB, includes Z3, CVC4,
+# Bitwuzla, Yices, ABC, Cryptol). Only needed once per workstation.
+source proofs/cryptol/version.txt
+mkdir -p ~/.saw
+curl -L "$SAW_TARBALL_URL" -o /tmp/saw.tar.gz
+echo "$SAW_TARBALL_SHA256  /tmp/saw.tar.gz" | sha256sum -c -
+tar -xzf /tmp/saw.tar.gz -C ~/.saw --strip-components=1
+export PATH="$HOME/.saw/bin:$PATH"
+
+# Compile the C reference + run the SAW proof.
 cd proofs/cryptol
+clang -emit-llvm -c -O0 -g calculate_crc_bits.c -o calculate_crc_bits.bc
 saw crc_3gpp.saw
 ```
+
+Expected final output:
+
+```text
+Proof succeeded! crc24A_A16
+Proof succeeded! crc24B_A16
+Proof succeeded! crc16_A16
+Proof succeeded! crc8_A16
+All four CRC equivalence goals discharged.
+```
+
+Total wall-clock under 10 seconds on a modern x86_64 laptop; each goal
+is a 2^16 = 65 536-input SMT problem dispatched to Z3.

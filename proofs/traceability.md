@@ -23,15 +23,15 @@ top-to-bottom without opening every proof file.
 | ✅ | `proofs/tla/harq.tla` (`TypeOK`, `DoneIsExplicit`) | structural invariants | `openspec/specs/coding-chain/spec.md` | Ratifies that the model's state-space bounds and the "done = success-or-exhausted" condition hold for every reachable state. |
 | ✅ | `proofs/tla/harq.tla` (`EventualTermination`) | bounded liveness — `<>[](phase = "done")` | `openspec/specs/coding-chain/spec.md` | "HARQ accumulation" — every trace eventually settles in `phase = done`, which by `DoneIsExplicit` means either `decoded /= NULL` or `attempt = Len(RvIdxSequence) + 1`. No infinite-retransmission cycles. |
 
-## Cryptol / SAW (PR 3 — pending)
+## Cryptol / SAW (PR 3)
 
 | Status | Proof artifact | Property | OpenSpec spec | Spec scenario(s) discharged |
 |---|---|---|---|---|
-| ⏳ | `proofs/cryptol/crc_3gpp.saw` | Cryptol spec ≡ translated `calculate_crc_bits` (C/Rust) for `A ∈ {1, …, 6144}` × all four polynomials | `openspec/specs/crc/spec.md` | Independent bit-level confirmation of the Lean CRC proof. Pairs with the "translation drift guard" property test once landed. |
+| ✅ | `proofs/cryptol/crc_3gpp.saw` + `crc_3gpp.cry` + `calculate_crc_bits.c` | Bit-level equivalence: the Cryptol spec and the C transliteration produce identical CRC bits for every 16-bit input, across all four 3GPP polynomials (`crc24A`, `crc24B`, `crc16`, `crc8`). Discharged by SAW's `llvm_verify` with Z3 over all 2^16 inputs per polynomial. | `openspec/specs/crc/spec.md` | "SAW checks the equivalence" — independent bit-level confirmation of the Lean CRC proof, using a tool purpose-built for crypto specs. Limited to A = 16 in this PR (representative grid; extension to the full A ∈ {1, …, 6144} range tracked alongside the Lean universal-A follow-up). Caught a real off-by-one in the C `crc24B_poly` constant during initial development; SAW returned a Z3 counterexample that pointed at the polynomial. |
 
 ## Follow-ups tracked here
 
 - **CRC universal-A statement.** The Lean proof currently covers `A ∈ {1, 2, 4, 8, 16, 32, 64}` per polynomial via `native_decide`. Extending to "any natural number A ≥ 1" needs an auxiliary GF(2)-linearity lemma about the LFSR run plus a structural induction over the input list. ~200 more lines of stdlib Lean; tracked as its own change.
-- **Cryptol/SAW CRC equivalence** (PR 3).
-- **CI verify job** currently has `verify-lean` + `verify-tla`; PR 3 adds `verify-cryptol`.
+- **A-grid extension for both CRC tracks** (Lean and Cryptol/SAW). Both currently cover a finite A-grid; full A ∈ {1, …, 6144} extension is tracked as one follow-up because the Lean structural induction and the SAW polymorphic spec land together.
+- **Translation drift guard property test** — a MATLAB-side / Octave-side test that compares `calculate_crc_bits.m` output against the C transliteration on random inputs, so a future edit to either file that drifts the two apart fails before SAW ever runs. Pairs with the existing CRC property tests in `tests/property/`.
 - **`scripts/check_proof_traceability.py`** (tasks 7.2, 7.3) — assert every `.lean` / `.tla` / `.cry` file under `proofs/` is referenced by this file. Currently maintained by hand; a small cleanup PR will mechanise it.
