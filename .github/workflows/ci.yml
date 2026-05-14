@@ -106,3 +106,98 @@ jobs:
             tests/coverage.xml
             tests/metric.txt
           if-no-files-found: warn
+
+  verify-lean:
+    name: Lean 4 proofs (proofs/lean)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Lean toolchain
+        id: cache-lean
+        uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: lean-${{ hashFiles('proofs/lean/lean-toolchain') }}-v1
+
+      - name: Install Lean (with fallback for restricted networks)
+        if: steps.cache-lean.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          # Read the pinned toolchain. Format: leanprover/lean4:vX.Y.Z
+          TOOLCHAIN="$(tr -d '[:space:]' < proofs/lean/lean-toolchain)"
+          VERSION="${TOOLCHAIN##*:}"        # v4.14.0
+          VERSION_NUM="${VERSION#v}"        # 4.14.0
+          echo "Pinned toolchain: $TOOLCHAIN  (version $VERSION_NUM)"
+
+          # 1) Install elan itself. The -y skips the interactive prompt and
+          #    --default-toolchain none avoids elan immediately trying to
+          #    fetch a default toolchain (we install the pinned one below).
+          echo "::group::Install elan"
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+              | sh -s -- -y --default-toolchain none
+          echo "::endgroup::"
+          export PATH="$HOME/.elan/bin:$PATH"
+          elan --version
+
+          # 2) Try the standard elan flow first. Fall back to direct GitHub
+          #    tarball install if release.lean-lang.org is unreachable
+          #    (some corporate / sandbox networks block it).
+          echo "::group::Install Lean toolchain $VERSION_NUM"
+          if elan default "$TOOLCHAIN" 2>elan.err ; then
+              echo "elan default succeeded."
+          else
+              echo "elan default failed; falling back to direct GitHub install:"
+              cat elan.err || true
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends zstd
+              mkdir -p "$HOME/.elan/toolchains/leanprover--lean4---${VERSION}"
+              curl -L "https://github.com/leanprover/lean4/releases/download/${VERSION}/lean-${VERSION_NUM}-linux.tar.zst" \
+                  | tar --use-compress-program=zstd -x --strip-components=1 \
+                  -C "$HOME/.elan/toolchains/leanprover--lean4---${VERSION}"
+              elan default "$TOOLCHAIN"
+          fi
+          echo "::endgroup::"
+
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Add elan to PATH for cached toolchain
+        if: steps.cache-lean.outputs.cache-hit == 'true'
+        run: echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Print Lean version
+        run: lean --version
+
+      - name: Build Lean proofs (lake build)
+        working-directory: proofs/lean
+        run: lake build
+
+      - name: Axiom audit (no sorry, only foundational stdlib axioms)
+        working-directory: proofs/lean
+        run: |
+          cat > /tmp/Axioms.lean <<'EOF'
+          import Turbo3gpp
+          #print axioms Turbo3gpp.Encoder.termination_reaches_zero_state
+          #print axioms Turbo3gpp.Interleaver.qpp_bijection_for_supported_K
+          #print axioms Turbo3gpp.CRC.crc24A_equivalence
+          #print axioms Turbo3gpp.CRC.crc24B_equivalence
+          #print axioms Turbo3gpp.CRC.crc16_equivalence
+          #print axioms Turbo3gpp.CRC.crc8_equivalence
+          EOF
+          LEAN_PATH=.lake/build/lib lean /tmp/Axioms.lean | tee /tmp/axioms.out
+          # Reject sorry / admit / user-declared axioms. Allowed axioms are
+          # Lean's foundational stdlib set: propext, Lean.ofReduceBool,
+          # Quot.sound, Classical.choice. Anything else fails the gate.
+          if grep -qE 'sorry|admit' /tmp/axioms.out ; then
+              echo "ERROR: Lean proofs depend on sorry/admit." >&2
+              exit 1
+          fi
+          # Soft-check: enumerate the allowed foundational axiom names.
+          if grep -oE 'depends on axioms: \[[^]]*\]' /tmp/axioms.out \
+              | grep -oE '[A-Za-z_][A-Za-z0-9_.]*' \
+              | sort -u \
+              | grep -vxE '(depends|on|axioms|propext|Lean\.ofReduceBool|Quot\.sound|Classical\.choice)' ; then
+              echo "ERROR: Lean proofs depend on an unexpected axiom." >&2
+              exit 1
+          fi
+          echo "Axiom audit passed."

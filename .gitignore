@@ -10,3 +10,6 @@ tests/coverage.txt
 tests/coverage_dbg.xml
 tests/metric.txt
 results/
+
+# Lean build artifacts
+proofs/lean/.lake/
