@@ -12,9 +12,9 @@ classdef System < handle
     %   - release(obj) so the next step re-runs setupImpl
     %   - subsref so obj(arg) dispatches to step(obj, arg)
     %
-    % MATLAB users are unaffected: MATLAB resolves matlab.System to its own
-    % built-in class when its toolbox is installed; this shim is only picked
-    % up under Octave (or under MATLAB without the toolbox).
+    % Keep the parent octave_shims/ directory off MATLAB's path. MATLAB should
+    % resolve matlab.System to MathWorks' built-in class; this shim is only for
+    % GNU Octave runners that explicitly add octave_shims/ to the path.
 
     properties (Access = private)
         is_setup_done = false;

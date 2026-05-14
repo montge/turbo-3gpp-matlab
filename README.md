@@ -10,11 +10,13 @@ MATLAB simulations of the encoder and decoder for the LTE turbo code from 3GPP R
 
 ## Running on GNU Octave
 
-The encoder/decoder core runs unmodified on GNU Octave 8.4+ via the minimal `matlab.System` shim at `+matlab/System.m`. To validate the chain end-to-end (encode → noise-free LLR mapping → decode → bit-exact match):
+The encoder/decoder core runs unmodified on GNU Octave 8.4+ via the minimal `matlab.System` shim at `octave_shims/+matlab/System.m`. To validate the chain end-to-end (encode → noise-free LLR mapping → decode → bit-exact match):
 
 ```bash
 octave --no-gui test_octave_smoke.m
 ```
+
+MATLAB users should run from the repository root normally; the Octave shim is kept off MATLAB's default package path so it does not shadow MathWorks' built-in `matlab.System`.
 
 The plotting/simulation drivers (`plot_BLER_vs_SNR.m`, `plot_SNR_vs_A.m`) still require MATLAB.
 

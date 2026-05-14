@@ -9,7 +9,9 @@
 % Exits with status 0 on success (printing OCTAVE SMOKE TEST PASSED) and a
 % non-zero status on any failure.
 
-addpath(fileparts(mfilename('fullpath')));
+repo_root = fileparts(mfilename('fullpath'));
+addpath(repo_root);
+addpath(fullfile(repo_root, 'octave_shims'));
 
 % Suppress the warnings emitted when Octave re-encodes the latin-1 (c) marks
 % in the existing copyright headers; they are noise and would obscure real
