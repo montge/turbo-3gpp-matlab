@@ -56,7 +56,8 @@ Archive a completed change in the experimental workflow.
 
    **If delta specs exist:**
    - Compare each delta spec with its corresponding main spec at `openspec/specs/<capability>/spec.md`
-   - Determine what changes would be applied (adds, modifications, removals, renames)
+   - Use the `openspec-sync-specs` comparison approach: compare requirements and scenarios semantically, then fall back to a unified diff when structure is ambiguous
+   - Determine what changes would be applied (adds, modifications, removals, renames) and call out any conflicts before prompting
    - Show a combined summary before prompting
 
    **Prompt options:**
@@ -93,7 +94,7 @@ Archive a completed change in the experimental workflow.
 
 **Output On Success**
 
-```
+```text
 ## Archive Complete
 
 **Change:** <change-name>
@@ -106,7 +107,7 @@ All artifacts complete. All tasks complete.
 
 **Output On Success (No Delta Specs)**
 
-```
+```text
 ## Archive Complete
 
 **Change:** <change-name>
@@ -119,7 +120,7 @@ All artifacts complete. All tasks complete.
 
 **Output On Success With Warnings**
 
-```
+```text
 ## Archive Complete (with warnings)
 
 **Change:** <change-name>
@@ -137,7 +138,7 @@ Review the archive if this was not intentional.
 
 **Output On Error (Archive Exists)**
 
-```
+```text
 ## Archive Failed
 
 **Change:** <change-name>
