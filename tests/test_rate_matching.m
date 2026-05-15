@@ -62,3 +62,6 @@ function test_rejects_wrong_row_count
     d_bad = zeros(2, 44);
     assertExceptionThrown(@() rate_matching(d_bad, 0, 0, 0, 96), ...
         'rate_matching:bad_d_rows');
+
+function test_invalid_rate_matching_input_row_count
+    test_rejects_wrong_row_count();

@@ -46,3 +46,6 @@ function test_encoded_length_must_match_modulation_layer_granularity
     assertExceptionThrown(@() ...
         get_3gpp_encoded_code_block_segment_lengths(131, 2, 2, 2), ...
         'get_3gpp_encoded_code_block_segment_lengths:bad_G');
+
+function test_invalid_encoded_length_granularity
+    test_encoded_length_must_match_modulation_layer_granularity();

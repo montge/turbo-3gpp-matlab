@@ -25,15 +25,11 @@ The system SHALL compute the per-segment lengths `K_r` for a transport block of 
 
 ### Requirement: Encoded code block segment lengths follow TS36.212 §5.1.4.1.2
 
-The system SHALL compute the per-segment encoded lengths `E_r` for a total encoded transport block length `G`, segment count `C`, layer count `N_L`, and modulation order `Q_m` such that `sum(E_r) = G`, each `E_r` is a multiple of `N_L * Q_m`, and the last `gamma = mod(G/(N_L*Q_m), C)` segments are one `N_L*Q_m` step longer than the first `C - gamma` segments.
+The encoded segment length helper SHALL validate that the total encoded transport block length can be evenly partitioned into modulation-layer symbols before computing per-segment lengths.
 
-#### Scenario: Equal-length encoded segments
-- **WHEN** `get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)` is called with `mod(G/(N_L*Q_m), C) == 0`
-- **THEN** every element of `E_r` equals `G / C`
-
-#### Scenario: Unequal-length encoded segments
-- **WHEN** `get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)` is called with `gamma = mod(G/(N_L*Q_m), C) > 0`
-- **THEN** the first `C - gamma` elements equal `N_L*Q_m*floor(G/(N_L*Q_m*C))` and the remaining `gamma` elements equal `N_L*Q_m*ceil(G/(N_L*Q_m*C))`
+#### Scenario: Invalid encoded length granularity
+- **WHEN** `get_3gpp_encoded_code_block_segment_lengths(G, C, N_L, Q_m)` is called with `mod(G, N_L * Q_m) != 0`
+- **THEN** the call raises `get_3gpp_encoded_code_block_segment_lengths:bad_G`
 
 ### Requirement: Transport block segmentation with filler bits and code block CRC
 
