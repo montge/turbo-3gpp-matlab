@@ -16,6 +16,7 @@ GitHub issue #3 tracks validation gaps where root-level object setters or happy-
 
 - `crc`: `calculate_crc_bits` must reject a generator matrix with fewer rows than the information vector length.
 - `code-block-segmentation`: encoded code-block segment length calculation must reject `G` values that are not multiples of `N_L * Q_m`.
+- `rate-matching`: `rate_matching` must reject input matrices `d` that do not have exactly 3 rows.
 - Additional capability deltas will be added as the helper catalogue identifies missing direct checks.
 
 ## Impact
