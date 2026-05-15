@@ -60,7 +60,7 @@ Every property-based test in `tests/property/` SHALL seed `rand('state', N)` (or
 The system SHALL measure line coverage of source `.m` files using [MOcov](https://github.com/MOcov/MOcov), with the following exclusion list:
 
 - `tests/**`
-- `+matlab/**`
+- `octave_shims/**`
 - `plot_BLER_vs_SNR.m`
 - `plot_SNR_vs_A.m`
 - `node_modules/**`
@@ -123,4 +123,3 @@ The repository's `.github/workflows/ci.yml` SHALL include a `tests` job that:
 #### Scenario: Local invocation
 - **WHEN** a contributor runs `npm test` (mapped in `package.json` to the test runner)
 - **THEN** the same MOxUnit invocation runs locally and reports pass/fail and a coverage percentage
-

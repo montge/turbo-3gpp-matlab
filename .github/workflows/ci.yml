@@ -26,6 +26,7 @@ jobs:
           octave --no-gui --eval "
             warning('off', 'all');
             addpath(pwd);
+            addpath(fullfile(pwd, 'octave_shims'));
             rand('state', 42);
             A = 8000; G = 24000;
             hEnc = turbo_encoding_chain('A', A, 'G', G, 'Q_m', 2);

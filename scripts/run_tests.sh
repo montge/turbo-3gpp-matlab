@@ -22,8 +22,10 @@ OCTAVE_BIN="${OCTAVE_BIN:-octave}"
 
 "$OCTAVE_BIN" --no-gui --quiet --eval "
     warning('off', 'all');
-    addpath(pwd);
-    addpath('tests/MOxUnit/MOxUnit');
+    repo_root = pwd();
+    addpath(repo_root);
+    addpath(fullfile(repo_root, 'octave_shims'));
+    addpath(fullfile(repo_root, 'tests', 'MOxUnit', 'MOxUnit'));
     moxunit_set_path();
     success = moxunit_runtests('tests', 'tests/property', '-verbose');
     if success
