@@ -1,6 +1,7 @@
 function test_suite = test_get_3gpp_encoded_code_block_segment_lengths
     % Scenarios covered (code-block-segmentation/spec.md):
-    %   Equal-length encoded segments, Unequal-length encoded segments
+    %   Equal-length encoded segments, Unequal-length encoded segments,
+    %   Invalid encoded length granularity
     try
         test_functions = localfunctions(); %#ok<NASGU>
     catch
@@ -40,3 +41,8 @@ function test_single_segment_yields_g
     % C = 1 trivially gives E_r = G.
     E_r = get_3gpp_encoded_code_block_segment_lengths(132, 1, 1, 2);
     assertEqual(E_r, 132);
+
+function test_encoded_length_must_match_modulation_layer_granularity
+    assertExceptionThrown(@() ...
+        get_3gpp_encoded_code_block_segment_lengths(131, 2, 2, 2), ...
+        'get_3gpp_encoded_code_block_segment_lengths:bad_G');

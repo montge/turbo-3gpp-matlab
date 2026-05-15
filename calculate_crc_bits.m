@@ -21,6 +21,12 @@ function p = calculate_crc_bits(a,G_max)
 % FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for 
 % more details.
 
+if size(G_max,1) < length(a)
+    error('calculate_crc_bits:generator_too_short', ...
+        'Expected size(G_max, 1) >= length(a); got %d rows for %d bits.', ...
+        size(G_max,1), length(a));
+end
+
 G = G_max(end-length(a)+1:end,:);
 
 p = mod(a*G,2);
