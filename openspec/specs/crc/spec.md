@@ -5,7 +5,6 @@ Defines the four 3GPP CRC polynomials (CRC24A, CRC24B, CRC16, CRC8) from TS36.21
 
 ## Formal Verification
 CRC proof obligations are mapped in [`proofs/traceability.md`](../../../proofs/traceability.md#lean-4-pr-1), including the Lean CRC equivalence proof and the independent Cryptol/SAW bit-level equivalence proof.
-
 ## Requirements
 ### Requirement: 3GPP CRC polynomial selection
 
@@ -45,24 +44,9 @@ The system SHALL construct an `A × P` binary CRC generator matrix `G_P` from a 
 
 ### Requirement: CRC calculation, append, and verify
 
-The system SHALL provide three CRC operations on bit vectors that all use the same generator matrix `G_max`:
-
-- `calculate_crc_bits(a, G_max)` returns the `L`-bit CRC of an `A`-bit information vector by computing `mod(a * G_max(end-A+1:end, :), 2)`, where `L = size(G_max, 2)`.
-- `generate_and_append_crc_bits(a, G_max)` returns the `A + L` bit vector formed by concatenating the information bits with the calculated CRC bits.
-- `check_and_remove_crc_bits(b, G_max)` accepts a `B = A + L` bit vector, recalculates the CRC over the leading `A` bits, returns the `A` information bits if the CRC matches, and returns an empty vector otherwise.
-
-#### Scenario: CRC append round-trips with check
-- **WHEN** an information vector `a` is passed through `generate_and_append_crc_bits` and the result is passed through `check_and_remove_crc_bits` using the same generator matrix
-- **THEN** the returned vector equals `a`
-
-#### Scenario: CRC failure returns empty
-- **WHEN** any single bit of an output from `generate_and_append_crc_bits` is flipped and the corrupted vector is passed through `check_and_remove_crc_bits`
-- **THEN** the result is an empty vector
-
-#### Scenario: Generator matrix sized larger than input
-- **WHEN** `calculate_crc_bits(a, G_max)` is called with `size(G_max, 1) > length(a)`
-- **THEN** only the trailing `length(a)` rows of `G_max` are used, and the resulting CRC has length `size(G_max, 2)`
+The CRC helper functions SHALL reject direct invalid inputs with deliberate helper-level errors before reaching implicit indexing failures.
 
 #### Scenario: Generator matrix smaller than input
 - **WHEN** `calculate_crc_bits(a, G_max)` is called with `size(G_max, 1) < length(a)`
-- **THEN** the call raises an error (it MUST NOT silently truncate `a` or perform out-of-range indexing)
+- **THEN** the call raises `calculate_crc_bits:generator_too_short`
+
