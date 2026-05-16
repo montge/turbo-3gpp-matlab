@@ -1,8 +1,24 @@
-*.m~
 .DS_Store
+
+# MATLAB / Octave editor and session artifacts
+*.asv
+*.m~
+*.mat
+octave-workspace
 
 # Node / npm tooling (OpenSpec)
 node_modules/
+npm-debug.log*
+
+# Python local tooling
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
 
 # Test artifacts (regenerated each CI run)
 tests/coverage.xml
@@ -10,6 +26,15 @@ tests/coverage.txt
 tests/coverage_dbg.xml
 tests/metric.txt
 results/
+
+# HDL simulation artifacts (GHDL / cocotb / waveform viewers)
+work-obj*.cf
+*.ghw
+*.vcd
+*.fst
+sim_build/
+dump.vcd
+*.vcd.gz
 
 # Lean build artifacts
 proofs/lean/.lake/
