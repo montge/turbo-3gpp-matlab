@@ -29,6 +29,9 @@ results/
 
 # HDL simulation artifacts (GHDL / cocotb / waveform viewers)
 work-obj*.cf
+results.xml
+hdl/sim/**/e~*.o
+hdl/sim/**/crc8_parallel
 *.ghw
 *.vcd
 *.fst

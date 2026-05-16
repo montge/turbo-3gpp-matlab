@@ -44,6 +44,27 @@ Run line-coverage measurement under MOcov with the 90 % gate (writes `tests/cove
 bash scripts/run_coverage.sh
 ```
 
+Run local HDL simulation checks with GHDL and cocotb:
+
+```bash
+python3.13 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+
+npm run hdl:smoke
+npm run test:hdl
+```
+
+The smoke command validates GHDL with a tiny VHDL testbench and writes
+`sim_build/smoke/and2.vcd`. The HDL test command runs cocotb against the first
+board-neutral CRC8 core and writes `hdl/sim/crc8/crc8_parallel.vcd`. Both
+waveform artifacts are ignored by git and can be inspected with GTKWave:
+
+```bash
+gtkwave sim_build/smoke/and2.vcd
+gtkwave hdl/sim/crc8/crc8_parallel.vcd
+```
+
 Run static analysis (MISS_HIT `mh_style` + `mh_lint` + `mh_metric`, with the project's `miss_hit.cfg`):
 
 ```bash

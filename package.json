@@ -4,7 +4,9 @@
   "description": "Matlab simulations of the encoder and decoder for the LTE turbo code from 3GPP Release 15",
   "main": "index.js",
   "scripts": {
-    "test": "bash scripts/run_tests.sh"
+    "test": "bash scripts/run_tests.sh",
+    "hdl:smoke": "bash scripts/run_hdl_smoke.sh",
+    "test:hdl": "bash scripts/run_hdl_tests.sh"
   },
   "repository": {
     "type": "git",
