@@ -39,6 +39,23 @@ sim_build/
 dump.vcd
 *.vcd.gz
 
+# Quartus II board build / simulation / programming outputs
+hdl/boards/**/db/
+hdl/boards/**/incremental_db/
+hdl/boards/**/output_files/
+hdl/boards/**/simulation/
+hdl/boards/**/greybox_tmp/
+hdl/boards/**/hc_output/
+*.sof
+*.pof
+*.qws
+*.rpt
+*.summary
+*.smsg
+*.jdi
+*.pin
+*.qarlog
+
 # Lean build artifacts
 proofs/lean/.lake/
 
