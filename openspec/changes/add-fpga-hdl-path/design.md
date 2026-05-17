@@ -63,6 +63,22 @@ checked against the existing MATLAB/Octave golden model.
    testbench first; board wrappers can later adapt the same core to a specific
    board target.
 
+5. **Target the observed DE2 / Cyclone II board first.**
+
+   The available board has a Cyclone II `EP2C35F672C6N` marking on the FPGA.
+   That matches the original Terasic/Altera DE2 class of board, whose public
+   materials list a Cyclone II `EP2C35F672C6` FPGA. Treat this as the first
+   hardware bring-up target and keep DE1/DE2-70 variants out of scope until a
+   second physical board is identified.
+
+6. **Use Quartus II 13.0sp1 on Windows or Linux for synthesis.**
+
+   Intel's device-support table lists Cyclone II support through Quartus II
+   `13.0sp1` for Windows/Linux. Current macOS work should remain
+   simulator-first with GHDL/cocotb/GTKWave; Quartus synthesis/programming will
+   need a Windows/Linux host, VM, or later self-hosted runner with the legacy
+   toolchain installed.
+
 ## Risks / Trade-offs
 
 - **Fixed-point behavior can diverge from MATLAB doubles** -> Delay decoder HDL
@@ -81,8 +97,8 @@ checked against the existing MATLAB/Octave golden model.
 
 ## Open Questions
 
-- Which exact boards are available: DE1, DE1-SoC, DE2, or DE2-115?
-- Which Quartus version supports those boards on the available machine?
+- Should Quartus run on a Windows/Linux VM from this Mac, or on a separate
+  Windows/Linux host attached to the DE2 USB-Blaster?
 - Should the first HDL module be CRC calculation or subblock interleaver address
   generation?
 - Should golden vectors be stored as checked-in fixtures for small cases or
