@@ -63,13 +63,15 @@ checked against the existing MATLAB/Octave golden model.
    testbench first; board wrappers can later adapt the same core to a specific
    board target.
 
-5. **Target the observed DE2 / Cyclone II board first.**
+5. **Target the observed DE2 and DE1 / Cyclone II boards first.**
 
-   The available board has a Cyclone II `EP2C35F672C6N` marking on the FPGA.
-   That matches the original Terasic/Altera DE2 class of board, whose public
-   materials list a Cyclone II `EP2C35F672C6` FPGA. Treat this as the first
-   hardware bring-up target and keep DE1/DE2-70 variants out of scope until a
-   second physical board is identified.
+   The available DE2-class board has a Cyclone II `EP2C35F672C6N` marking on
+   the FPGA. That matches the original Terasic/Altera DE2 class of board, whose
+   public materials list a Cyclone II `EP2C35F672C6` FPGA. A second available
+   DE1-class board has a Cyclone II `EP2C20F484C7N` marking, matching the
+   Cyclone II starter/DE1-class development kit. Treat these as the first
+   hardware bring-up targets and keep DE2-70 or other variants out of scope
+   until another physical board is identified.
 
 6. **Use Quartus II 13.0sp1 on Windows or Linux for synthesis.**
 
@@ -98,7 +100,7 @@ checked against the existing MATLAB/Octave golden model.
 ## Open Questions
 
 - Should Quartus run on a Windows/Linux VM from this Mac, or on a separate
-  Windows/Linux host attached to the DE2 USB-Blaster?
+  Windows/Linux host attached to the DE1/DE2 USB-Blaster?
 - Should the first HDL module be CRC calculation or subblock interleaver address
   generation?
 - Should golden vectors be stored as checked-in fixtures for small cases or
