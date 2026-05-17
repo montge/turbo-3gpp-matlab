@@ -35,9 +35,9 @@
 
 ## 7. On-Board Program-and-Observe Smoke (hardware-gated)
 
-- [ ] 7.1 Program the connected board (`quartus_pgm` with the produced `.sof`).
-- [ ] 7.2 Set switches to each selected golden input and confirm the displayed CRC byte matches the expected value from `crc8_parallel.csv`.
-- [ ] 7.3 Record the board used, programming command, inputs, and observed outputs.
+- [x] 7.1 Program the connected board. DE2 programmed via `quartus_pgm -c USB-Blaster -m jtag -o "p;output_files/crc8_de2.sof"` (13.0sp1): "Using cable USB-Blaster [USB-0]", device JTAG ID `0x020B40DD` (EP2C35), "Configuration succeeded -- 1 device(s) configured", 0 errors. NOTE (Win11 25H2 driver saga): the bundled 2013 SHA-1 USB-Blaster driver is blocked (`STATUS_DRIVER_BLOCKED`) by the enforced kernel CI policy — not fixable via Memory Integrity / vulnerable-driver-blocklist toggles. Resolved by installing the modern SHA-256 (FTDI-signed, v2.12.28) USB-Blaster driver from the standalone **Quartus Prime 25.1std Programmer (qdrivers)**, then **Disabling the auto-installed 25.1 `JTAGServer` Windows service** so 13.0sp1's own `jtagd` owns port 1309 (the 25.1 server is protocol-incompatible with the 13.0sp1 client). `jtagconfig` then shows `USB-Blaster [USB-0]` + `EP2C35`.
+- [x] 7.2 Golden-vector smoke — on-board `HEX1 HEX0` matches `hdl/vectors/crc8_parallel.csv` for all four DE2 vectors: `0x0000`→`00`, `0xFFFF`→`CA`, `0x1234`→`40`, `0xACE1`→`96`. Pin cross-check resolved: the authoritative Terasic DE2 pin table is byte-identical to `crc8_de2.qsf` (SW/LEDR/HEX0/HEX1) — pins verified correct, no rebuild needed.
+- [x] 7.3 Recorded: board = DE2 (Cyclone II `EP2C35F672C6`); cable = `USB-Blaster [USB-0]`; program cmd = `quartus_pgm -c USB-Blaster -m jtag -o "p;output_files/crc8_de2.sof"`; inputs/outputs per 7.2 (all 4 vectors pass). DE1 wrapper/project remain synthesis-verified only (no DE1 hardware) — acceptable per the change design (either board satisfies the smoke).
 
 ## 8. Documentation and Validation
 
