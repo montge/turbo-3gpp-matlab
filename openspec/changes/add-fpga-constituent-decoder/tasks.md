@@ -1,8 +1,8 @@
 ## 1. Fixed-Point Reference + Characterization
 
 - [ ] 1.1 Author `scripts/fixedpoint_constituent_decoder.m` (Octave): Max-Log-MAP port of `constituent_decoder.m` with explicit input/metric Q-format, saturation, per-step max-normalization, fixed op-order.
-- [ ] 1.2 Pin the fixed-point widths and the outer agreement band in `design.md` once the reference is written and characterized (close the design Open Questions).
-- [ ] 1.3 Add `scripts/characterize_constituent_decoder.m`: encode→BPSK+AWGN→LLR frames at representative SNRs; compare fixed-point reference vs float `constituent_decoder.m` (hard-decision agreement / BER); assert within the documented band.
+- [ ] 1.2 Pin the fixed-point widths, the ±inf saturation sentinel, and the outer equivalence band in `design.md` once the reference is written and characterized (close the design Open Questions).
+- [ ] 1.3 Add `scripts/characterize_constituent_decoder.m`: encode→BPSK+AWGN→LLR frames at a *bounded* set of SNRs/frame counts; assert fixed-point reference vs float `constituent_decoder.m` **numerical equivalence on identical inputs** (extrinsic-LLR error stats + hard-decision agreement) within the documented band — explicitly NOT a communications-BER check (BER is a P2 oracle).
 
 ## 2. Golden-Vector Generator
 

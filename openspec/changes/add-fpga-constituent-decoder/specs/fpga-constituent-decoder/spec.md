@@ -13,12 +13,15 @@ SHALL be the inner bit-exact oracle for the HDL core.
 - **THEN** they are produced by the fixed-point reference (not the raw float
   model), and the HDL core is required to match them bit-for-bit
 
-#### Scenario: Reference characterized against the float model
+#### Scenario: Reference is numerically equivalent to the float model
 
 - **WHEN** the characterization harness runs the fixed-point reference and the
-  float `constituent_decoder.m` over encode→BPSK+AWGN→LLR frames
-- **THEN** their hard-decision agreement / BER difference stays within the
-  band documented in the change design
+  float `constituent_decoder.m` over the **same** encode→BPSK+AWGN→LLR frames
+- **THEN** their extrinsic-LLR error statistics and hard-decision agreement on
+  those identical inputs stay within the band documented in the change design
+- **AND** this is an equivalence check, NOT a communications-BER check (a
+  single non-iterative constituent decoder has poor BER by design; BER is a
+  later turbo-loop oracle)
 
 ### Requirement: Board-neutral constituent Log-BCJR core (Max-Log-MAP)
 
