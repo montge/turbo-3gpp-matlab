@@ -141,6 +141,12 @@ most review.
   now a **bounded BER-vs-SNR** comparison vs float `turbo_decoder.m` within a
   documented dB margin (this is where iterative/Max-Log-MAP performance is
   actually measured). Keep large-`K` vectors few (cycle-budget, §2).
+- **Design seed already worked out:** `hdl/docs/p2_turbo_loop_design_seed.md`
+  — full data-flow algebra, half-iteration reframing (`H=2·max_iter`,
+  even=upper/odd=lower), memory map, FSM sketch, reuse list
+  (`constituent_decoder` + `qpp_rom` + `qpp_interleaver`, all verified),
+  cycle budget, and P2 open questions. Promote to a formal change once P1 is
+  archived.
 
 ### P3 — `add-fpga-turbo-decoder-termination`
 
