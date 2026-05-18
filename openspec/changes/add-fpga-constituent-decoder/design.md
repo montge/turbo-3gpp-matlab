@@ -101,11 +101,44 @@ the P1-specific shape.)
   block; the two-tier method is documented here and in the roadmap so later
   decoder increments reuse it unchanged.
 
+## Fixed-point format — first cut (reasoned start; confirm/tighten in task 1.2)
+
+Generous starting point (roadmap M3 tightens later). Because the inner gate is
+bit-exact to *our* reference, "wrong" widths cost only equivalence-band/area,
+never correctness — so start wide.
+
+| Quantity | Format (signed) | Width | Derivation |
+|---|---|---|---|
+| input LLR `x_a,z_a` | Q4.3 (I=4,F=3) + sign | **W_in = 8** | range ≈ [−16,+16), step 0.125; AWGN LLRs at useful SNR mostly within ±~12; F=3 keeps quantization error small for the equivalence band |
+| branch metric γ | — | **W_γ = W_in+1 = 9** | γ ∈ {0,−x_a,−z_a,−x_a−z_a} ⇒ \|γ\| ≤ \|x_a\|+\|z_a\| |
+| α, β (post-norm) | — | **W_αβ = W_in+6 = 14** | per-step max-norm caps max at 0; the 8-state, memory-3 trellis bounds the normalized spread to ≲ ~8·max\|γ\| ⇒ ≲ ~2048 LSB ≪ 2^13 |
+| δ = α+β+γ_z | — | **W_δ = W_αβ+2 = 16** | sum of two W_αβ values + a γ term |
+| extrinsic x_e | — | **W_xe = W_δ+1 = 17** | `max(δ\|x=0) − max(δ\|x=1)` (signed difference) |
+
+**±inf sentinel + overflow argument.** `MIN_SENT = −2^(W_αβ−1) = −8192`,
+`MAX_SENT = +(2^(W_αβ−1)−1)`; **all α/β/δ adds saturate** (never wrap). Real
+post-normalization metrics lie in ≈[−2048, 0] LSB; the sentinel at ∓8192 is
+~4× beyond that, and saturating add can only push it *further* from 0 — so an
+impossible state can never spuriously win a `max` (`max(MIN_SENT, real)=real`
+always). P3's filler `+inf` reuses `MAX_SENT` symmetrically. At `k=0` only
+state 1 = 0, others = `MIN_SENT`, per-step max = 0 (correct).
+
+**Normalization point (bit-exactness contract).** Each α step: compute the 8
+next-state metrics, take `m = max` over the 8, store `α − m`; identical for β.
+The reference and HDL MUST use the same max-set, the same subtraction point,
+and the same saturation. With Max-Log-MAP (`max` exact/associative) this is
+the *entire* bit-exactness contract.
+
+**Equivalence-band knob.** If the outer fixed-vs-float equivalence band is too
+loose, increase **F** (fractional bits), not integer bits — the gap is
+quantization-resolution-bound, not range-bound (range is comfortably covered).
+
 ## Open Questions
 
-- Exact fixed-point widths and the outer agreement band — pinned in this
-  design.md during implementation, once the reference is written and
-  characterized (deliberately not guessed up front).
+- The table above is a *reasoned first cut*, not the final pin. Task 1.2
+  confirms/tightens it once the reference is written and characterized
+  (mainly: is F=3 enough for the equivalence band; can W_αβ shrink).
 - LLR computation detail (e.g. `2/σ²` scaling vs normalized) — settle in the
-  reference; the inner gate is bit-exact regardless, the outer check measures
-  the chosen scaling's BER.
+  reference; the inner gate is bit-exact regardless of scaling; the outer
+  equivalence check is sensitive to F (resolution), addressed by the knob
+  above.
