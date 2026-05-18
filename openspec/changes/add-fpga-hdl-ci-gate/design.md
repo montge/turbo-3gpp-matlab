@@ -45,8 +45,13 @@ follow-on); no new HDL or vectors; no change to the other CI jobs.
 - **GHDL/cocotb version drift on apt** → cocotb pinned via
   `requirements-dev.txt`; record the GHDL apt version in the job log; mismatch
   surfaces as a lane failure, not a silent pass.
-- **Vectors must be committed** (already are) → the job asserts each lane's
-  CSV exists before running (clear failure if a future change forgets).
+- **Vectors must be committed** (already are) → a missing vector surfaces as
+  that lane's cocotb test failing (clear non-zero exit). The runner does *not*
+  hard-map dir→CSV: the mapping is intentionally irregular (`turbo_encode_top`
+  reuses `turbo_encoder.csv`; `rsc_constituent_encoder` has no CSV by design,
+  it checks a Python reference), so a brittle pre-check would false-fail.
+  "A future change forgot the vector" is therefore caught by lane execution,
+  not a name-mapped assertion.
 
 ## Open Questions
 

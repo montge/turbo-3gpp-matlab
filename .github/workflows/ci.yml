@@ -334,3 +334,31 @@ jobs:
 
       - name: Proof traceability check
         run: python3 scripts/check_proof_traceability.py
+
+  hdl-sim:
+    name: HDL cocotb/GHDL lanes (bit-exact vs golden vectors)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GHDL and make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --fix-missing ghdl make
+          ghdl --version | head -1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create venv and install cocotb (pinned)
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          python -m pip install --quiet --upgrade pip
+          python -m pip install --quiet -r requirements-dev.txt
+          python -c "import cocotb; print('cocotb', cocotb.__version__)"
+
+      - name: Run all HDL lanes (committed vectors; no Octave/MATLAB)
+        run: bash scripts/run_all_hdl_lanes.sh
