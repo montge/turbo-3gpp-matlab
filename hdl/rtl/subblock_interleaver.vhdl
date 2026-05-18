@@ -77,6 +77,11 @@ begin
       if rst = '1' then
         running <= '0';
       elsif start = '1' then
+        if unsigned(d_in) = 0 then
+          -- Out-of-contract: D=0 has no valid run profile. Defined no-op
+          -- (stay idle). Valid inputs (D>=40) never take this path.
+          running <= '0';
+        else
         Rc      := shift_right(unsigned(d_in) + 31, 5);   -- ceil(D/32)
         KPic    := shift_left(Rc, 5);                     -- 32 * R
         Rr      <= Rc;
@@ -87,6 +92,7 @@ begin
         c0      <= 0;
         kk      <= (others => '0');
         running <= '1';
+        end if;
       elsif running = '1' then
         if kk = KPi - 1 then
           running <= '0';

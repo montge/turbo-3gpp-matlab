@@ -28,7 +28,11 @@ if max(K) >= 2^W
 end
 
 % --- golden CSV ---
-csv_path = fullfile(repo_root, 'hdl', 'vectors', 'qpp_rom.csv');
+csv_dir = fullfile(repo_root, 'hdl', 'vectors');
+if ~exist(csv_dir, 'dir')
+    mkdir(csv_dir);
+end
+csv_path = fullfile(csv_dir, 'qpp_rom.csv');
 fid = fopen(csv_path, 'w');
 if fid < 0
     error('generate_hdl_qpp_rom:OpenFailed', 'Cannot open %s', csv_path);

@@ -166,9 +166,17 @@ begin
 
           when S_LOOKUP =>
             if rom_done = '1' then
-              d0c   <= rom_d0;
-              stepc <= rom_step;
-              st    <= S_ENC_START;
+              if rom_sup = '1' then
+                d0c   <= rom_d0;
+                stepc <= rom_step;
+                st    <= S_ENC_START;
+              else
+                -- Unsupported K: do not encode with invalid (d0,step).
+                -- Defined safe halt (busy deasserts, out_valid never
+                -- asserts). Supported K (all golden vectors) is unchanged
+                -- -> behaviour bit-exact.
+                st <= S_DONE;
+              end if;
             end if;
 
           when S_ENC_START =>

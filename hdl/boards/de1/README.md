@@ -35,7 +35,7 @@ programming hardware**.
 
 ## Build
 
-```
+```bash
 cd hdl/boards/de1
 C:\altera\13.0sp1\quartus\bin64\quartus_sh --flow compile crc8_de1
 ```
@@ -49,7 +49,7 @@ once via Windows Device Manager pointing at
 `C:\altera\13.0sp1\quartus\drivers\usb-blaster` (or `usb-blaster-ii`) when
 the board is first connected.
 
-```
+```bash
 C:\altera\13.0sp1\quartus\bin64\quartus_pgm -m jtag -o "p;output_files/crc8_de1.sof"
 ```
 

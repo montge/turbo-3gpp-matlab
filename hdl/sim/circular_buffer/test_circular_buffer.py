@@ -74,3 +74,28 @@ async def matches_circular_buffer_golden(dut):
             f"K_Pi={K_Pi} N_ref={N_ref} LBRM={I_LBRM} rv={rv} E={E} mismatch\n"
             f"  expected {e[:48]}...\n  actual   {actual[:48]}..."
         )
+
+
+@cocotb.test()
+async def rejects_invalid_params(dut):
+    # Out-of-contract: K_Pi=0 or E=0 -> defined safe abort (no out_valid,
+    # no div/mod-by-zero hang).
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    for kpi, elen in ((0, 400), (64, 0)):
+        dut.rst.value = 1
+        dut.start.value = 0
+        dut.v_valid.value = 0
+        await RisingEdge(dut.clk)
+        dut.rst.value = 0
+        dut.k_pi_in.value = kpi
+        dut.n_ref_in.value = 0
+        dut.i_lbrm.value = 0
+        dut.rv_in.value = 0
+        dut.e_in.value = elen
+        dut.start.value = 1
+        await RisingEdge(dut.clk)
+        dut.start.value = 0
+        for _ in range(64):
+            await Timer(1, unit="ns")
+            assert int(dut.out_valid.value) == 0, f"kpi={kpi} e={elen}: no output"
+            await RisingEdge(dut.clk)

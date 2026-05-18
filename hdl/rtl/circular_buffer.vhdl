@@ -74,13 +74,22 @@ begin
         case st is
           when S_IDLE =>
             if start = '1' then
-              K_Pi  <= to_integer(unsigned(k_pi_in));
-              Ev    <= to_integer(unsigned(e_in));
-              NrefR <= to_integer(unsigned(n_ref_in));
-              RvR   <= to_integer(unsigned(rv_in));
-              LbrmR <= i_lbrm;
-              cidx  <= 0;
-              st    <= S_LOAD;
+              -- Out-of-contract guard: K_Pi=0 / E=0 / (LBRM with N_ref=0)
+              -- would drive divide/mod-by-zero in S_COMPUTE/S_READ. Defined
+              -- safe abort. Valid golden inputs (K_Pi>=64, E>0, N_ref>0)
+              -- never take this path -> behaviour bit-exact.
+              if unsigned(k_pi_in) = 0 or unsigned(e_in) = 0
+                 or (i_lbrm = '1' and unsigned(n_ref_in) = 0) then
+                st <= S_DONE;
+              else
+                K_Pi  <= to_integer(unsigned(k_pi_in));
+                Ev    <= to_integer(unsigned(e_in));
+                NrefR <= to_integer(unsigned(n_ref_in));
+                RvR   <= to_integer(unsigned(rv_in));
+                LbrmR <= i_lbrm;
+                cidx  <= 0;
+                st    <= S_LOAD;
+              end if;
             end if;
 
           when S_LOAD =>
