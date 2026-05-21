@@ -6,9 +6,9 @@
 
 ## 2. Golden-Vector Generator
 
-- [ ] 2.1 Add `scripts/generate_hdl_constituent_decoder_vectors.m`: build realistic LLR frames, quantize, run the fixed-point reference, emit `hdl/vectors/constituent_decoder.csv` (`K`, quantized `x_a`, `z_a`, expected `x_e`).
-- [ ] 2.2 Suite: representative `K` set + a couple of SNRs; document the CSV schema.
-- [ ] 2.3 Generators use only existing helpers + the new reference; no MATLAB/Octave sources changed.
+- [x] 2.1 Add `scripts/generate_hdl_constituent_decoder_vectors.m`: build realistic LLR frames, quantize, run the fixed-point reference, emit `hdl/vectors/constituent_decoder.csv` (`K`, quantized `x_a`, `z_a`, expected `x_e`).
+- [x] 2.2 Suite: representative `K` set + a couple of SNRs; document the CSV schema.
+- [x] 2.3 Generators use only existing helpers + the new reference; no MATLAB/Octave sources changed.
 
 ## 3. Constituent Decoder Core
 
