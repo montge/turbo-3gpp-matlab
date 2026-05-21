@@ -63,3 +63,27 @@ async def matches_rate_matching_golden(dut):
             f"D={D} N_ref={N_ref} LBRM={I_LBRM} rv={rv} E={E} mismatch\n"
             f"  expected {e[:48]}...\n  actual   {actual[:48]}..."
         )
+
+
+@cocotb.test()
+async def rejects_invalid_d_len(dut):
+    # Out-of-contract: D=0 or D>DMAX(6148) -> defined safe abort.
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    for dlen in (0, 7000):
+        dut.rst.value = 1
+        dut.in_start.value = 0
+        dut.d_valid.value = 0
+        await RisingEdge(dut.clk)
+        dut.rst.value = 0
+        dut.d_len.value = dlen
+        dut.n_ref_in.value = 0
+        dut.i_lbrm.value = 0
+        dut.rv_in.value = 0
+        dut.e_in.value = 400
+        dut.in_start.value = 1
+        await RisingEdge(dut.clk)
+        dut.in_start.value = 0
+        for _ in range(80):
+            await Timer(1, unit="ns")
+            assert int(dut.out_valid.value) == 0, f"d_len={dlen}: no output"
+            await RisingEdge(dut.clk)

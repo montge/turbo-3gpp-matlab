@@ -7,8 +7,12 @@ use work.qpp_rom_pkg.all;
 -- K -> (d0, step) lookup over the generated TS36.212 Table 5.1.3-3 ROM.
 -- The 188 supported K are non-uniformly spaced, so a sequential scan
 -- (<= QPP_ROM_N cycles, well under the K>=40 encode time) is used. Asserts
--- `supported` for a table K, deasserts it otherwise; `done` pulses when the
--- scan completes.
+-- `supported` for a table K, deasserts it otherwise. `done` is LEVEL-high:
+-- it asserts when the scan completes and stays asserted until the next
+-- `start` (or `rst`). Consumers latch on the `done='1'` edge and leave the
+-- waiting state, so the held level is harmless and intentional (a one-cycle
+-- pulse was considered; level is kept to avoid any timing change to the
+-- bit-exact-verified turbo_encode_top / tx_chain_top integrators).
 entity qpp_rom is
   port (
     clk       : in  std_logic;

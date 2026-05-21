@@ -58,3 +58,24 @@ async def matches_subblock_interleaver_golden(dut):
         assert fillers == K_Pi - D, (
             f"D={D} idx={idx}: filler count {fillers} != {K_Pi - D}"
         )
+
+
+@cocotb.test()
+async def rejects_zero_d_in(dut):
+    # Out-of-contract: D=0 -> defined no-op (valid never asserts, no hang).
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    dut.rst.value = 1
+    dut.start.value = 0
+    dut.d_in.value = 0
+    dut.idx_in.value = 0
+    await RisingEdge(dut.clk)
+    dut.rst.value = 0
+    dut.d_in.value = 0
+    dut.idx_in.value = 0
+    dut.start.value = 1
+    await RisingEdge(dut.clk)
+    dut.start.value = 0
+    for _ in range(64):
+        await Timer(1, unit="ns")
+        assert int(dut.valid.value) == 0, "D=0 must not produce valid output"
+        await RisingEdge(dut.clk)

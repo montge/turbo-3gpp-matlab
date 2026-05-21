@@ -135,12 +135,20 @@ begin
         case st is
           when S_IDLE =>
             if in_start = '1' then
-              Dr   <= unsigned(d_len);
-              -- K_Pi = 32 * ceil(D/32) = ((D+31)>>5)<<5
-              KPi  <= shift_left(
-                        resize(shift_right(unsigned(d_len) + 31, 5), 14), 5);
-              widx <= 0;
-              st   <= S_LOADD;
+              -- Out-of-contract guard: D=0 or D>DMAX would drive invalid
+              -- widx evolution / out-of-range buffer access in S_LOADD.
+              -- Defined safe abort. Valid D (44..6148) is unaffected ->
+              -- behaviour bit-exact.
+              if unsigned(d_len) = 0 or to_integer(unsigned(d_len)) > DMAX then
+                st <= S_DONE;
+              else
+                Dr   <= unsigned(d_len);
+                -- K_Pi = 32 * ceil(D/32) = ((D+31)>>5)<<5
+                KPi  <= shift_left(
+                          resize(shift_right(unsigned(d_len) + 31, 5), 14), 5);
+                widx <= 0;
+                st   <= S_LOADD;
+              end if;
             end if;
 
           when S_LOADD =>

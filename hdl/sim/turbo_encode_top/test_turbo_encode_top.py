@@ -70,3 +70,34 @@ async def turbo_encode_top_matches_golden(dut):
             f"  expected {expected_d[:48]}...\n"
             f"  actual   {actual[:48]}..."
         )
+
+
+@cocotb.test()
+async def rejects_unsupported_k(dut):
+    # Out-of-contract: K=41 absent from the QPP table -> rom_sup=0 ->
+    # defined safe halt (busy deasserts, out_valid never asserts).
+    cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
+    K = 41
+    dut.rst.value = 1
+    dut.in_start.value = 0
+    dut.c_in.value = 0
+    dut.c_in_valid.value = 0
+    await RisingEdge(dut.clk)
+    dut.rst.value = 0
+    dut.k_in.value = K
+    dut.in_start.value = 1
+    await RisingEdge(dut.clk)
+    dut.in_start.value = 0
+    for j in range(K):
+        dut.c_in.value = j & 1
+        dut.c_in_valid.value = 1
+        await RisingEdge(dut.clk)
+    dut.c_in_valid.value = 0
+    saw_out = 0
+    for _ in range(400):                 # > 188-entry ROM scan + slack
+        await Timer(1, unit="ns")
+        if int(dut.out_valid.value) == 1:
+            saw_out = 1
+        await RisingEdge(dut.clk)
+    assert saw_out == 0, "unsupported K must not produce encoded output"
+    assert int(dut.busy.value) == 0, "core must halt (busy=0) on unsupported K"
