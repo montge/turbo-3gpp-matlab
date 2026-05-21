@@ -101,27 +101,37 @@ the P1-specific shape.)
   block; the two-tier method is documented here and in the roadmap so later
   decoder increments reuse it unchanged.
 
-## Fixed-point format — first cut (reasoned start; confirm/tighten in task 1.2)
-
-Generous starting point (roadmap M3 tightens later). Because the inner gate is
-bit-exact to *our* reference, "wrong" widths cost only equivalence-band/area,
-never correctness — so start wide.
+## Fixed-point format — pinned (post-task-1.2)
 
 | Quantity | Format (signed) | Width | Derivation |
 |---|---|---|---|
-| input LLR `x_a,z_a` | Q4.3 (I=4,F=3) + sign | **W_in = 8** | range ≈ [−16,+16), step 0.125; AWGN LLRs at useful SNR mostly within ±~12; F=3 keeps quantization error small for the equivalence band |
-| branch metric γ | — | **W_γ = W_in+1 = 9** | γ ∈ {0,−x_a,−z_a,−x_a−z_a} ⇒ \|γ\| ≤ \|x_a\|+\|z_a\| |
-| α, β (post-norm) | — | **W_αβ = W_in+6 = 14** | per-step max-norm caps max at 0; the 8-state, memory-3 trellis bounds the normalized spread to ≲ ~8·max\|γ\| ⇒ ≲ ~2048 LSB ≪ 2^13 |
-| δ = α+β+γ_z | — | **W_δ = W_αβ+2 = 16** | sum of two W_αβ values + a γ term |
-| extrinsic x_e | — | **W_xe = W_δ+1 = 17** | `max(δ\|x=0) − max(δ\|x=1)` (signed difference) |
+| input LLR `x_a,z_a` | Q4.4 (I=4,F=4) + sign | **W_in = 9** | range ≈ [−16,+16), step 0.0625; covers `2y/σ²` AWGN LLRs across the SNR sweep with margin; F=4 (one bump from the first-cut F=3) was needed to pin the outer equivalence band — see "Equivalence band" below |
+| branch metric γ | — | **W_γ = W_in+1 = 10** | γ ∈ {0,−x_a,−z_a,−x_a−z_a} ⇒ \|γ\| ≤ \|x_a\|+\|z_a\| |
+| α, β (post-norm) | — | **W_αβ = W_in+6 = 15** | per-step max-norm caps max at 0; the 8-state, memory-3 trellis bounds the normalized spread to ≲ ~8·max\|γ\| ⇒ ≲ ~4096 LSB ≪ 2^14 (still generous; tightening is M3 territory and would risk silently re-opening the equivalence band) |
+| δ = α+β+γ_z | — | **W_δ = W_αβ+2 = 17** | sum of two W_αβ values + a γ term |
+| extrinsic x_e | — | **W_xe = W_δ+1 = 18** | `max(δ\|x=0) − max(δ\|x=1)` (signed difference) |
 
-**±inf sentinel + overflow argument.** `MIN_SENT = −2^(W_αβ−1) = −8192`,
-`MAX_SENT = +(2^(W_αβ−1)−1)`; **all α/β/δ adds saturate** (never wrap). Real
-post-normalization metrics lie in ≈[−2048, 0] LSB; the sentinel at ∓8192 is
-~4× beyond that, and saturating add can only push it *further* from 0 — so an
-impossible state can never spuriously win a `max` (`max(MIN_SENT, real)=real`
-always). P3's filler `+inf` reuses `MAX_SENT` symmetrically. At `k=0` only
-state 1 = 0, others = `MIN_SENT`, per-step max = 0 (correct).
+**First-cut delta and rationale.** The pre-implementation table was W_in=8/F=3
+(LSB 0.125) and W_αβ=14. F=3 was sufficient for *operation* — saturation never
+triggered and the algorithm converged — but the outer equivalence band's
+hard-decision agreement metric at the worst-cell (K=6144, SNR=0 dB) sat at
+~98.2%, below the documented ≥99% target. Bumping **F** (the design's
+"Equivalence-band knob") from 3 to 4 — and W_in from 8 to 9 to preserve the
+±16 range — roughly halves the quantization error across the entire grid and
+pushes every cell inside the band (worst now 99.02%). The downstream widths
+grow by 1 to keep the same headroom margin. **W_αβ tightening was explicitly
+not pursued at P1** — M3 is the maturation increment that tightens widths to
+realistic channel-LLR formats, and a 1-bit margin trade-off is not worth
+risking a re-characterization here.
+
+**±inf sentinel + overflow argument.** `MIN_SENT = −2^(W_αβ−1) = −16384`,
+`MAX_SENT = +(2^(W_αβ−1)−1) = +16383`; **all α/β/δ adds saturate** (never
+wrap). Real post-normalization metrics lie in ≈[−4096, 0] LSB; the sentinel at
+∓16384 is ~4× beyond that, and saturating add can only push it *further* from
+0 — so an impossible state can never spuriously win a `max`
+(`max(MIN_SENT, real)=real` always). P3's filler `+inf` reuses `MAX_SENT`
+symmetrically. At `k=0` only state 1 = 0, others = `MIN_SENT`, per-step max =
+0 (correct).
 
 **Normalization point (bit-exactness contract).** Each α step: compute the 8
 next-state metrics, take `m = max` over the 8, store `α − m`; identical for β.
@@ -129,16 +139,33 @@ The reference and HDL MUST use the same max-set, the same subtraction point,
 and the same saturation. With Max-Log-MAP (`max` exact/associative) this is
 the *entire* bit-exactness contract.
 
-**Equivalence-band knob.** If the outer fixed-vs-float equivalence band is too
-loose, increase **F** (fractional bits), not integer bits — the gap is
-quantization-resolution-bound, not range-bound (range is comfortably covered).
+**Equivalence band (pinned).** Fixed-point Max-Log-MAP reference vs float
+Max-Log-MAP `constituent_decoder.m` (`approx_star=true`) on identical AWGN-LLR
+frames at K ∈ {40, 512, 6144}, SNR ∈ {0, 2, 4} dB, 8 frames per cell, the
+band is:
+
+- `max |extrinsic-LLR error|` ≤ **0.50** LLR (~8 LSB at F_in=4)
+- `RMS |extrinsic-LLR error|` ≤ **0.10** LLR (~2 LSB at F_in=4)
+- Hard-decision agreement on systematic bits 1..K ≥ **99.00 %**
+
+Worst cell observed by `scripts/characterize_constituent_decoder.m`: max =
+0.337, RMS = 0.062, hd = 99.02 %. The band is set ~1.5× above worst-observed
+so it is a band, not a brittle equality. Note: comparison vs float *exact*
+Log-MAP (`approx_star=false`) includes the Max-Log-MAP algorithmic loss
+(typical max~3, RMS~0.9, hd~94% at low SNR) — that gap is the M1 maturation
+target, not a P1 concern.
 
 ## Open Questions
 
-- The table above is a *reasoned first cut*, not the final pin. Task 1.2
-  confirms/tightens it once the reference is written and characterized
-  (mainly: is F=3 enough for the equivalence band; can W_αβ shrink).
-- LLR computation detail (e.g. `2/σ²` scaling vs normalized) — settle in the
-  reference; the inner gate is bit-exact regardless of scaling; the outer
-  equivalence check is sensitive to F (resolution), addressed by the knob
-  above.
+(Resolved by task 1.2 — kept here as a paper-trail.)
+
+- ~~F=3 sufficient?~~ **No.** Bumped to F=4 (W_in 8→9 to preserve range).
+  See "First-cut delta and rationale" above; equivalence-band knob exercised
+  exactly as design.md prescribed.
+- ~~Can W_αβ shrink?~~ **Deferred to M3.** With per-step max-norm the
+  normalized spread is empirically well under 2^11; W_αβ=15 leaves ~3 bits of
+  headroom. Tightening here would force re-characterization and could
+  silently reopen the band; M3 is the appropriate increment.
+- LLR scaling — settled as `2·y/σ²` in the reference and characterization
+  harness; the inner gate stays bit-exact regardless of scaling because the
+  HDL receives the *quantized* LLR codes from upstream.
