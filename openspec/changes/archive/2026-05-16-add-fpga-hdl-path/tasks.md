@@ -22,7 +22,7 @@
 
 ## 4. Board Bring-Up Planning
 
-- [ ] 4.1 Identify the exact available Altera board variant and FPGA part number for DE1/DE2 work.
-- [ ] 4.2 Identify a compatible Quartus version and document any macOS limitations or required alternate host.
+- [x] 4.1 Identify the exact available Altera board variant and FPGA part number for DE1/DE2 work. (Resolved by the follow-on `add-de1-de2-board-bringup` change: DE2 = `EP2C35F672C6`, DE1 = `EP2C20F484C7`; lead-free `N` suffix is packaging-only.)
+- [x] 4.2 Identify a compatible Quartus version and document any macOS limitations or required alternate host. (Resolved by the follow-on `add-de1-de2-board-bringup` change: Quartus II 13.0sp1 on Windows host; Quartus 13.1 dropped Cyclone II support; macOS is not a supported host for this toolchain — Windows is used instead.)
 - [x] 4.3 Define the first board smoke interface, such as switches/keys feeding a small input and LEDs or seven-segment display showing status.
 - [x] 4.4 Defer Quartus project files and pin constraints until the simulator-verified HDL core is selected and stable.
