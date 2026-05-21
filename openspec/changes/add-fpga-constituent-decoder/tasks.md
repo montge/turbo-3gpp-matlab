@@ -12,10 +12,10 @@
 
 ## 3. Constituent Decoder Core
 
-- [ ] 3.1 Add `hdl/rtl/constituent_decoder.vhdl`: γ branch metrics from the 16 trellis transitions; signed saturating Q-format datapath.
-- [ ] 3.2 α forward recursion with per-step max-normalization; full-block α storage (8 × (K+3)).
-- [ ] 3.3 β backward recursion with per-step max-normalization; extrinsic `x_e = max(δ|x=0) − max(δ|x=1)` streamed out.
-- [ ] 3.4 K-agnostic streaming interface (`start` latches `K`; load `K+3` `(x_a,z_a)`; stream `K+3` `x_e` with valid/last).
+- [x] 3.1 Add `hdl/rtl/constituent_decoder.vhdl`: γ branch metrics from the 16 trellis transitions; signed saturating Q-format datapath.
+- [x] 3.2 α forward recursion with per-step max-normalization; full-block α storage (8 × (K+3)).
+- [x] 3.3 β backward recursion with per-step max-normalization; extrinsic `x_e = max(δ|x=0) − max(δ|x=1)` streamed out.
+- [x] 3.4 K-agnostic streaming interface (`start` latches `K`; load `K+3` `(x_a,z_a)`; stream `K+3` `x_e` with valid/last).
 
 ## 4. Simulation Lane
 
