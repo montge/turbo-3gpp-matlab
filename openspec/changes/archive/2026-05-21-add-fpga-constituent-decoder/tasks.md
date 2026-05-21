@@ -38,4 +38,4 @@
 
 ## 7. Follow-on Note (not required for completion)
 
-- [ ] 7.1 Confirm roadmap §3 P2+ (turbo loop, CRC/HARQ/filler, exact Log-MAP LUT, sliding-window/BRAM, RX integration, board demo) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
+- [x] 7.1 Confirm roadmap §3 P2+ (turbo loop, CRC/HARQ/filler, exact Log-MAP LUT, sliding-window/BRAM, RX integration, board demo) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
