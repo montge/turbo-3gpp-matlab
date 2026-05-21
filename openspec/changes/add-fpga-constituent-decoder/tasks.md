@@ -19,22 +19,22 @@
 
 ## 4. Simulation Lane
 
-- [ ] 4.1 Add `hdl/sim/constituent_decoder/` (Makefile + cocotb) mirroring established lanes.
-- [ ] 4.2 Driver loads `(x_a,z_a)`, collects `x_e`; asserts **bit-exact** vs the fixed-point reference golden CSV.
-- [ ] 4.3 Artifacts covered by existing `.gitignore`.
+- [x] 4.1 Add `hdl/sim/constituent_decoder/` (Makefile + cocotb) mirroring established lanes.
+- [x] 4.2 Driver loads `(x_a,z_a)`, collects `x_e`; asserts **bit-exact** vs the fixed-point reference golden CSV.
+- [x] 4.3 Artifacts covered by existing `.gitignore`.
 
 ## 5. Verification
 
-- [ ] 5.1 Inner gate: lane PASS bit-exact for all representative `K`/SNR vectors.
-- [ ] 5.2 Outer: characterization within the documented band (recorded).
-- [ ] 5.3 Regression: all prior HDL lanes + Octave suite still pass.
-- [ ] 5.4 Record results (vectors, K/SNR set, agreement figures).
+- [x] 5.1 Inner gate: lane PASS bit-exact for all representative `K`/SNR vectors. (27/27 frames bit-exact: K∈{40,512,6144} × SNR∈{0,2,4} dB × 3.)
+- [x] 5.2 Outer: characterization within the documented band (recorded). (Band pinned in P1.1–1.3 / design.md "Equivalence band": max |ext-LLR err| ≤ 0.50, RMS ≤ 0.10 LLR; not re-derived here, the inner gate enforces the fixed-point reference bit-exactly.)
+- [x] 5.3 Regression: all prior HDL lanes + Octave suite still pass. (11/11 HDL lanes PASS incl. the new constituent_decoder; Octave suite 102/102.)
+- [x] 5.4 Record results (vectors, K/SNR set, agreement figures). (Vectors: hdl/vectors/constituent_decoder.csv, 27 frames; inner gate bit-exact 27/27; outer band as 5.2.)
 
 ## 6. Validation and Docs
 
-- [ ] 6.1 Add `hdl/sim/constituent_decoder/README.md` (two-tier method, schema, regeneration, run, roadmap pointer).
-- [ ] 6.2 `npx openspec validate add-fpga-constituent-decoder --strict` passes.
-- [ ] 6.3 `npx openspec validate --all --strict` — no regression.
+- [x] 6.1 Add `hdl/sim/constituent_decoder/README.md` (two-tier method, schema, regeneration, run, roadmap pointer).
+- [x] 6.2 `npx openspec validate add-fpga-constituent-decoder --strict` passes.
+- [x] 6.3 `npx openspec validate --all --strict` — no regression. (22 passed, 0 failed.)
 
 ## 7. Follow-on Note (not required for completion)
 
