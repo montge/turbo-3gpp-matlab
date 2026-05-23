@@ -102,6 +102,21 @@ with both.)
    generator is supplied (mirrors `nargin == 4`); with no CRC the core behaves
    exactly like P2 (fixed `H`).
 
+   *Stage-1 pin (task 1.2) — pre-loop hard-decision indexing.* The float
+   `turbo_decoder.m` pre-loop decision `c = double(d_a(1:K) < 0)` uses Octave
+   **column-major linear indexing** over the `3×(K+4)` matrix, so it reads the
+   first `K` *matrix elements* (`row 1 col 1`, `row 2 col 1`, `row 3 col 1`,
+   `row 1 col 2`, …) — **not** the first `K` systematic LLRs of row 1. This is
+   a quirk of the float source, but to return a bit-identical
+   `iterations_performed = 0` the reference reproduces the SAME column-major
+   linear index on the (post `NaN→+inf`, quantized) matrix. The per-half checks
+   use the normal `c = (c_a + c_e) < 0` over the `K` systematic bits. The HDL
+   pre-check must read the same `K` column-major elements (only relevant when a
+   block decodes pre-loop, i.e. a near-noiseless input). The reference computes
+   the pre-loop sign on the *quantized* `d_a` so the stop point is a pure
+   function of the quantized inputs (sign agrees with the float for all finite
+   values and the `+inf` token).
+
 3. **Early termination is DETERMINISTIC ⇒ the bit-exact lane is preserved.**
    The decisive design constraint: the early-stop point is a pure function of
    the (quantized) inputs — same `d_a`, `K`, `max_iterations`, CRC polynomial ⇒
@@ -251,12 +266,33 @@ P3 inherits the P1 constituent-core format and the P2 extrinsic-exchange format
 | filler-bit fixed-point token | the P1 ±inf sentinel **`MAX_SENT = +16383`** at the core input format — reused unchanged, no new value | inherited (P1) |
 | early-termination control / `iterations_performed` | integer (half-iteration index, multiple of 0.5 ⇒ stored as `round(2··)` half-index); no Q-format | new (control only) |
 | CRC24 remainder / `crc_ok` | pure GF(2) bit logic (24-bit XOR-accumulate over the generator-matrix rows); no Q-format | new (bit logic) |
-| HARQ soft accumulator `buffer + d` | channel-LLR word widened by `ceil(log2(N_retx_max))` bits + margin, saturating; re-quantized to the P2 de-mux input format before decoding | **PINNED (task 1.x)** |
+| HARQ soft accumulator `buffer + d` | **`W_harq = 16`** (Q11.4, signed, range `[-32768, 32767]`), `F_in = 4` shared; saturating accumulate; re-quantized (saturated) to the `W_ext = 12` exchange word before the P2 de-mux | **PINNED (task 1.4)** |
+| HARQ max retransmissions `N_retx_max` | **`4`** (user-confirmed) | **PINNED (task 1.4)** |
 
-The HARQ accumulator is the **only** new fixed-point knob; its width is pinned
-≥ the channel-LLR word plus headroom for the pinned max-retransmission count,
-~1.5× above worst-observed need across the bounded sweep — the same band
-discipline P1/P2 used. No widening of the decode datapath.
+The HARQ accumulator is the **only** new fixed-point knob (decode datapath
+inherits P1/P2 widths + the ±inf sentinel unchanged). It is pinned in
+`scripts/fixedpoint_turbo_harq_accumulate.m` (`default_params.W_harq = 16`) and
+mirrored in `scripts/fixedpoint_turbo_decoder_term.m`.
+
+**Sizing (the same ≥1.5× band discipline P1/P2 used).** The channel-LLR
+exchange word is `W_ext = 12` (range `±2048`). A saturating sum of
+`N_retx_max = 4` such words reaches at most `4 × 2047 = 8188` in magnitude,
+which needs 14 signed bits. `W_harq = 16` = `W_ext + ceil(log2(4)) + 2` margin
+bits gives range `±32768` — a `32767 / 8188 ≈ 4.0×` headroom over the
+worst-case sum, so the accumulator **never wraps** for the pinned
+`N_retx_max = 4` (verified: a forced 4× accumulate of saturated max-magnitude
+LLRs lands exactly on `harq_max = 32767`, no wrap). The add **saturates** to
+the `W_harq` range; the combined matrix is then **saturated** to `W_ext`
+before decoding (the de-mux input format is unchanged from P2). One shared
+buffer per code block, matching the float chain's `obj.buffers{r+1}`.
+
+**Filler `MAX_SENT` idempotency under accumulation.** A filler position is
+`+inf → ext_max` in the exchange grid and `→ harq_max` on the accumulator grid;
+adding another `+inf` retransmission saturates again to `harq_max`, and the
+re-quantize to `W_ext` saturates back to `ext_max → +inf` at the core input.
+A known bit therefore stays known across all retransmissions — the saturating
+sentinel is idempotent under the accumulate, which is the correct behaviour
+(Decision 5).
 
 ## Open Questions
 
@@ -272,12 +308,25 @@ implementation otherwise.
   for length `K` exactly as `calculate_crc_bits` slices `G_max`. Recommendation:
   standalone `crc24_check` for v1; flag the parameterised-core refactor as a
   later cleanup. **User input requested.**
-- **HARQ buffer width and max-retransmission count — OPEN (Decision 5).** The
-  soft accumulator needs a pinned max number of retransmissions to size its
-  width-margin (e.g. 4 or 8 retx). What `N_retx_max` should v1 target, and is one
-  shared buffer per code block (matching `obj.buffers{r+1}`) the right v1 storage
-  (vs reusing a `circular_buffer`-style RAM)? Pinned in the Fixed-point table
-  once characterized; **user input requested** on the retransmission count.
+
+  *Stage-1 pin (task 1.2):* the reference computes the CRC with the existing
+  `calculate_crc_bits(c, G_max)` where `G_max =
+  get_crc_generator_matrix(6144, get_3gpp_crc_polynomial(<CRC24A|CRC24B>))`;
+  `calculate_crc_bits` slices `G = G_max(end-K+1:end, :)` (tail-indexed for
+  length `K`) before `mod(c*G, 2)`. The HDL `crc24_check` generator ROM must
+  reproduce exactly this tail-indexed slice of the size-6144 matrix for the
+  selected polynomial. The standalone-vs-parameterised RTL packaging remains an
+  RTL-stage (task 3.1) decision; the reference fixes only the *algebra* it must
+  match.
+- **HARQ buffer width and max-retransmission count — CLOSED (Decision 5,
+  task 1.4).** `N_retx_max = 4` (user-confirmed). The soft accumulator is
+  `W_harq = 16` (Q11.4, range `±32768`), one shared buffer per code block
+  matching `obj.buffers{r+1}` (the `circular_buffer`-style RAM is an RTL
+  storage detail, not a reference concern). Worst-case `4 × W_ext` sum =
+  `±8188` fits with ~4× headroom and never wraps. Pinned in the Fixed-point
+  table and in `scripts/fixedpoint_turbo_harq_accumulate.m`. The accumulate
+  saturates to `W_harq`, then re-quantizes (saturates) to `W_ext` for the
+  de-mux. Filler `MAX_SENT` is idempotent under the accumulate.
 - **Does early termination change the bit-exact contract? — CLOSED (Decision
   3).** No. Early termination is deterministic (pure function of quantized
   inputs); the reference and HDL check the CRC at identical points in identical
