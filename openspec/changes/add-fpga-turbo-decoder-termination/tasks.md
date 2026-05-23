@@ -1,0 +1,46 @@
+## 1. Fixed-Point Reference Extension + Characterization
+
+- [ ] 1.1 Extend `scripts/fixedpoint_turbo_decoder.m` with **filler handling**: record filler positions (first `F_r` systematic LLRs, signalled `NaN` upstream), map `NaN → +inf → MAX_SENT` at de-mux exactly where float `turbo_decoder.m` does `d_a(isnan)=inf` (reusing the P1 ±inf sentinel **unchanged**), and force `c(filler)=NaN`/known on output. No new fixed-point format.
+- [ ] 1.2 Extend the reference with **CRC-aided early termination**: accept a CRC generator (CRC24A/B selector), evaluate the pre-loop hard decision and the post-upper/post-lower hard decisions, run `calculate_crc_bits` at the **same** check points and order as float `turbo_decoder.m`, and return `iterations_performed` (`0` pre-loop, `iteration_index−0.5` post-upper, `iteration_index` post-lower, `max_iterations` if never). Early-stop MUST be deterministic (pure function of quantized inputs). CRC computed on the hard decision **before** the `c(filler)=NaN` overwrite.
+- [ ] 1.3 Extend the reference / harness with **HARQ soft accumulation**: a soft buffer summing the `3×(K+4)` channel-LLR matrix across retransmissions (`buffer += d`) with a reset, mirroring `turbo_decoding_chain.m`'s `obj.buffers`; saturating accumulate; filler `MAX_SENT` idempotent under accumulation.
+- [ ] 1.4 Pin the **HARQ accumulator width** and the **max-retransmission count** (the only new fixed-point knob) against the design.md "Fixed-point format" table and Open Questions, once the reference is written and characterized. P1 core widths + ±inf sentinel and the P2 extrinsic-exchange format are inherited **unchanged**.
+- [ ] 1.5 Extend `scripts/characterize_turbo_decoder.m` (bounded grid, modest frames, shallow target BER): assert the fixed-point reference vs float `turbo_decoder.m` / `turbo_decoding_chain.m` tracks (a) BER-vs-SNR within the documented dB margin (P2 oracle, unchanged), (b) the **early-stop `iterations_performed` distribution** and **CRC-pass rate**, and (c) HARQ retransmission **improves** BER as the float predicts. Trend/margin check, not a deep waterfall.
+
+## 2. Golden-Vector Generator (exercise early-stop / filler / HARQ)
+
+- [ ] 2.1 Extend `scripts/generate_hdl_turbo_decoder_vectors.m` to emit, per case, `K`, `max_iter`, CRC polynomial select (CRC24A/B), `F_r`, quantized `d_a` (`3×(K+4)`), expected `c` (`K` hard bits), **and expected `iterations_performed`** so the lane checks the stop point. Document the extended CSV schema.
+- [ ] 2.2 **Early-termination cases:** vectors with *differing* `iterations_performed` — a pre-loop-pass case (`iterations_performed = 0`), a high-SNR early-stop (1–3 iterations), and a low-SNR run-to-`max_iter` case.
+- [ ] 2.3 **Filler case(s):** at least one code block with `F_r > 0`; checks filler positions decode as known bits and the CRC handles them per the float model.
+- [ ] 2.4 **HARQ case:** at least one ≥2-retransmission sequence at a per-transmission SNR that only decodes after soft combining; checks the buffer accumulates and the post-combine decode matches.
+- [ ] 2.5 Generators use only existing helpers (`turbo_encoder`, `internal_interleaver`, `calculate_crc_bits`, `get_crc_generator_matrix`, the P1/P2 references) + the extended reference; keep **few** large-`K` cases (`~4·H·K` worst case); no MATLAB/Octave sources changed.
+
+## 3. RTL: CRC24 + Early-Stop + Filler + HARQ
+
+- [ ] 3.1 Add `hdl/rtl/crc24_check.vhdl`: streaming GF(2) CRC over the `get_crc_generator_matrix(6144, ·)` rows (tail-indexed for length `K` as `calculate_crc_bits` slices `G_max`), run-time CRC24A/CRC24B polynomial select, single `crc_ok` output; mirror the `crc8_parallel` generator-matrix idiom (standalone, leaving `crc8_parallel` untouched per the open question).
+- [ ] 3.2 Add the **filler mapping** at LLR load: positions flagged filler (`first F_r` systematic) → `+inf` token = P1 `MAX_SENT`, reusing the sentinel unchanged; force known/`NaN`-equivalent on output as the float model does.
+- [ ] 3.3 Fold **early-termination control** into the P2 loop FSM: `S_PRECHECK` (pre-loop `d_a(1:K)<0` + CRC) and a per-half `S_CRC_CHK` (`c=(c_a+c_e)<0` + `crc24_check`) that exits to `S_FINAL` on `crc_ok`, latching `iterations_performed`; runs to `H` (returns `max_iterations`) when CRC never passes; with no CRC supplied, bypassed → byte-for-byte P2 behaviour. Reuse the P2 combiner and constituent/qpp cores **unmodified**.
+- [ ] 3.4 Add **HARQ soft-accumulate** at the channel-LLR input stage: saturating `buffer += d` over the `3×(K+4)` matrix with a `clear`/reset, reusing existing buffer/RAM idioms where applicable; accumulated matrix feeds the P2 de-mux.
+- [ ] 3.5 Stream the `K` decoded bits with valid/last **and** the `iterations_performed` output; K-agnostic (start latches `K`, `max_iter`, CRC select, `F_r`, HARQ enable).
+
+## 4. Simulation Lane
+
+- [ ] 4.1 Add `hdl/sim/turbo_decoder_termination/` (Makefile + cocotb) mirroring established lanes; compile the P3 top + `crc24_check` + the reused `turbo_decoder_top`, `constituent_decoder`, `qpp_rom`, `qpp_interleaver`.
+- [ ] 4.2 Driver loads `K`/`max_iter`/CRC-select/`F_r`/HARQ-enable/`d_a` (and, for HARQ, a retransmission sequence), collects the `K` hard bits and `iterations_performed`; asserts **bit-exact** vs the extended fixed-point reference golden CSV — decoded bits AND `iterations_performed` (early-stop determinism).
+- [ ] 4.3 Artifacts covered by existing `.gitignore`.
+
+## 5. Verification
+
+- [ ] 5.1 Inner gate: lane PASS bit-exact (decoded bits + `iterations_performed`) for all early-stop / filler / HARQ vectors, confirming early-termination determinism.
+- [ ] 5.2 Outer: bounded characterization vs float `turbo_decoder.m` / `turbo_decoding_chain.m` — BER-vs-SNR within the documented dB margin, early-stop `iterations_performed` distribution + CRC-pass rate tracked, HARQ BER improvement confirmed (recorded).
+- [ ] 5.3 Regression: all prior HDL lanes (incl. the P2 `turbo_decoder_top`, P1 `constituent_decoder`, `qpp_rom`, `qpp_interleaver`, `crc8_parallel`) + the Octave suite still pass; reused cores unmodified.
+- [ ] 5.4 Record results (vectors, `K`/SNR/`max_iter`/filler/HARQ set, BER + margin, early-stop distribution, CRC-pass rate, HARQ improvement).
+
+## 6. Validation and Docs
+
+- [ ] 6.1 Add `hdl/sim/turbo_decoder_termination/README.md` (two-tier method incl. the `iterations_performed` inner check + early-stop determinism, CRC24A/B selection, filler + HARQ semantics, CSV schema, regeneration, run, roadmap pointer).
+- [ ] 6.2 `npx openspec validate add-fpga-turbo-decoder-termination --strict` passes.
+- [ ] 6.3 `npx openspec validate --all --strict` — no regression.
+
+## 7. Follow-on Note (not required for completion)
+
+- [ ] 7.1 Confirm roadmap §3 maturation track + P4 (M1 exact Log-MAP correction LUT + inter-half extrinsic scaling; M2 sliding-window/BRAM BCJR; M3 fixed-point width tightening; P4 RX-chain integration / de-rate-matching feeding the decoder; M4 optional DE2 board demo) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
