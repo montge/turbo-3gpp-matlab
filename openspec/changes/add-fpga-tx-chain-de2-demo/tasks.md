@@ -18,15 +18,15 @@
 
 ## 2. Synchronous-read the rate-match and encoder buffers (bit-exact)
 
-- [ ] 2.1 `rate_matching_top.vhdl`: make `d1/d2/d3buf` (~lines 105–107)
+- [x] 2.1 `rate_matching_top.vhdl`: make `d1/d2/d3buf` (~lines 105–107)
   synchronous-read (registered address); realign the `v1b/v2b/v3b` →
   `circular_buffer` `v_valid` timing so the loaded `v` columns are identical.
-- [ ] 2.2 `turbo_encode_top.vhdl`: make `buf` (~lines 129–130) a synchronous-read
+- [x] 2.2 `turbo_encode_top.vhdl`: make `buf` (~lines 129–130) a synchronous-read
   dual-port (true-dual-port or two single-port copies) M4K; realign
   `te_cbit`/`te_cpbit` so `turbo_encoder` samples the same bit pair on the same
   beat. Sub-cores (`qpp_rom`, `qpp_interleaver`, `turbo_encoder`,
   `subblock_interleaver`, `rsc_constituent_encoder`) stay unmodified.
-- [ ] 2.3 Re-run the `turbo_encode_top`, `rate_matching_top`, and `tx_chain_top`
+- [x] 2.3 Re-run the `turbo_encode_top`, `rate_matching_top`, and `tx_chain_top`
   cocotb/GHDL lanes — all MUST stay green bit-for-bit with their committed
   golden vectors (`turbo_encoder.csv`, `rate_matching.csv`, `tx_chain.csv`)
   unchanged. Gate: this is the proof the latency-absorption preserved behavior.

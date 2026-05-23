@@ -8,12 +8,25 @@ use work.qpp_rom_pkg.all;
 -- produces the TS36.212 SS5.1.3.2 3 x (K+4) matrix. Integrates the verified
 -- qpp_rom (K -> d0,step), qpp_interleaver (pi pattern) and turbo_encoder
 -- (RSC + assembly) cores, all instantiated UNMODIFIED. An input block buffer
--- (1 write, 2 async read ports) supplies the natural- and interleaved-order
--- bits the encoder consumes.
+-- (1 write, 2 read ports) supplies the natural- and interleaved-order bits the
+-- encoder consumes.
 --
--- FSM control signals are combinational (Mealy) so the clocked sub-cores
--- sample them aligned, exactly reproducing the stimulus that verified
--- turbo_encoder / qpp_interleaver standalone.
+-- Synthesis-hardened (DE2/Cyclone II): the input block buffer is read
+-- SYNCHRONOUSLY (registered read output) on BOTH read ports -- buf(didx) and
+-- buf(pi_idx) -- instead of the original combinational (async) dual read, so
+-- it infers a Cyclone II M4K block RAM (simple dual-port: one write port plus
+-- two registered read ports, the natural- and interleaved-order taps), WITHOUT
+-- changing a single output bit (the turbo_encode_top / tx_chain_top cocotb
+-- lanes stay bit-exact vs the committed golden vectors). The one-cycle read
+-- latency is absorbed by a single S_ENC_PRIME prefetch beat: the read
+-- addresses (didx / pi_idx) are presented one cycle ahead, their data is
+-- registered into te_cbit/te_cpbit, and the encoder's data/term/emit schedule
+-- runs one cycle behind the address generators -- so turbo_encoder samples the
+-- same (c, c_prime) bit pair on the same relative beat as before.
+--
+-- FSM control signals are otherwise combinational (Mealy) so the clocked
+-- sub-cores sample them aligned, exactly reproducing the stimulus that
+-- verified turbo_encoder / qpp_interleaver standalone.
 --
 -- Protocol (testbench-driven; K-agnostic):
 --   * rst='1' one cycle
@@ -76,13 +89,19 @@ architecture rtl of turbo_encode_top is
   type buf_t is array (0 to MAXK-1) of std_logic;
   signal buf : buf_t := (others => '0');
 
+  -- Synchronous-read registers for the two read ports of buf (registered read
+  -- output -> M4K simple-dual-port). cbit_r/cpbit_r hold buf(didx)/buf(pi_idx)
+  -- for the addresses presented (combinationally) on the previous clock edge.
+  signal cbit_r, cpbit_r : std_logic := '0';
+
   type state_t is (S_IDLE, S_LOAD, S_ROMSTART, S_LOOKUP, S_ENC_START,
-                   S_ENC_DATA, S_ENC_TERM, S_ENC_EMIT, S_DONE);
+                   S_ENC_PRIME, S_ENC_DATA, S_ENC_TERM, S_ENC_EMIT, S_DONE);
   signal st : state_t := S_IDLE;
 
   signal Kr   : unsigned(QPP_W-1 downto 0) := (others => '0');
   signal widx : integer range 0 to MAXK := 0;
-  signal didx : integer range 0 to MAXK := 0;
+  signal didx : integer range 0 to MAXK := 0;  -- natural read-address index
+  signal cdc  : integer range 0 to MAXK := 0;  -- encoder data-bit consume count
   signal tcnt : integer range 0 to 3 := 0;
   signal ecnt : integer range 0 to 4 := 0;
 
@@ -126,8 +145,11 @@ begin
   te_in_valid <= '1' when (st = S_ENC_DATA or st = S_ENC_TERM) else '0';
   te_in_term  <= '1' when st = S_ENC_TERM  else '0';
   te_emit     <= '1' when st = S_ENC_EMIT  else '0';
-  te_cbit     <= buf(didx)   when st = S_ENC_DATA else '0';
-  te_cpbit    <= buf(pi_idx) when st = S_ENC_DATA else '0';
+  -- Encoder is fed the REGISTERED buffer reads (data for the addresses issued
+  -- on the previous edge), so the data/term/emit schedule trails the address
+  -- generators by the single S_ENC_PRIME beat. Same bit pair, same beat.
+  te_cbit     <= cbit_r  when st = S_ENC_DATA else '0';
+  te_cpbit    <= cpbit_r when st = S_ENC_DATA else '0';
 
   d0_o      <= te_d0;
   d1_o      <= te_d1;
@@ -140,6 +162,13 @@ begin
   process (clk)
   begin
     if rising_edge(clk) then
+      -- Synchronous read of both buf ports: the read output is registered, so
+      -- the data for the addresses presented at this edge (didx / pi_idx)
+      -- appears next edge (M4K simple-dual-port). The encoder consumes these
+      -- one beat later, in S_ENC_DATA.
+      cbit_r  <= buf(didx);
+      cpbit_r <= buf(pi_idx);
+
       if rst = '1' then
         st <= S_IDLE;
       else
@@ -181,14 +210,33 @@ begin
 
           when S_ENC_START =>
             didx <= 0;                 -- te_rst + qi_start pulsed
-            st   <= S_ENC_DATA;
+            cdc  <= 0;
+            st   <= S_ENC_PRIME;
 
+          -- Prefetch beat: this cycle presents address index 0 (didx=0,
+          -- pi_idx=pi(0)); its data lands in cbit_r/cpbit_r at the edge into
+          -- S_ENC_DATA. te_in_valid is low here (no encode step yet), so no
+          -- body column is emitted. Advance the address generators by one so
+          -- S_ENC_DATA always presents the index whose data feeds the NEXT
+          -- consume, absorbing the one-cycle read latency.
+          when S_ENC_PRIME =>
+            if to_integer(Kr) > 1 then
+              didx <= 1;
+            end if;
+            st <= S_ENC_DATA;
+
+          -- Consume K registered data pairs (cdc = 0..K-1). The address index
+          -- didx runs one ahead (clamped at K-1, harmless+masked once the last
+          -- pair is captured); cdc gates the exit so exactly K bits encode.
           when S_ENC_DATA =>
-            if didx = to_integer(Kr) - 1 then
+            if cdc = to_integer(Kr) - 1 then
               tcnt <= 0;
               st   <= S_ENC_TERM;
             else
-              didx <= didx + 1;
+              cdc <= cdc + 1;
+              if didx < to_integer(Kr) - 1 then
+                didx <= didx + 1;
+              end if;
             end if;
 
           when S_ENC_TERM =>
