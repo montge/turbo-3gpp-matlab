@@ -43,4 +43,4 @@
 
 ## 7. Follow-on Note (not required for completion)
 
-- [ ] 7.1 Confirm roadmap §3 maturation track + P4 (M1 exact Log-MAP correction LUT + inter-half extrinsic scaling; M2 sliding-window/BRAM BCJR; M3 fixed-point width tightening; P4 RX-chain integration / de-rate-matching feeding the decoder; M4 optional DE2 board demo) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
+- [x] 7.1 Confirm roadmap §3 maturation track + P4 (M1 exact Log-MAP correction LUT + inter-half extrinsic scaling; M2 sliding-window/BRAM BCJR; M3 fixed-point width tightening; P4 RX-chain integration / de-rate-matching feeding the decoder; M4 optional DE2 board demo) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
