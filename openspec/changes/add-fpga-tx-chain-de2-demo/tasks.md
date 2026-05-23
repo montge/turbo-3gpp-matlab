@@ -1,17 +1,17 @@
 ## 1. Harden `circular_buffer` (divider-free + synchronous-read RAM)
 
-- [ ] 1.1 Replace `q = ⌈N_cb/(8·R_TC)⌉` (~line 121) with a divider-free
+- [x] 1.1 Replace `q = ⌈N_cb/(8·R_TC)⌉` (~line 121) with a divider-free
   subtract-/shift recurrence (compare-and-subtract or accumulate-and-count over
   the constant `8·R_TC = K_Pi/4`), in a dedicated per-block compute state.
-- [ ] 1.2 Replace `pos = (k_0+j) mod N_cb` (~line 134) with a running `pos`
+- [x] 1.2 Replace `pos = (k_0+j) mod N_cb` (~line 134) with a running `pos`
   register that increments and conditionally subtracts `N_cb`; initialize
   `pos = k_0 mod N_cb` once at block start via a bounded subtract recurrence.
-- [ ] 1.3 Bound `jj` to `integer range 0 to 8*KW_MAX` (~line 54) so the counter
+- [x] 1.3 Bound `jj` to `integer range 0 to 8*KW_MAX` (~line 54) so the counter
   is sized for synthesis.
-- [ ] 1.4 Make `w_bit`/`w_fill` (~lines 37–39, 136) synchronous-read: register
+- [x] 1.4 Make `w_bit`/`w_fill` (~lines 37–39, 136) synchronous-read: register
   the read index and absorb the one-cycle read latency inside `S_READ` so the
   emitted `(e_bit, out_valid, last)` stream is unchanged cycle-for-cycle.
-- [ ] 1.5 Re-run the `circular_buffer` cocotb/GHDL lane (`hdl/sim/circular_buffer/`)
+- [x] 1.5 Re-run the `circular_buffer` cocotb/GHDL lane (`hdl/sim/circular_buffer/`)
   — it MUST pass bit-for-bit with `hdl/vectors/circular_buffer.csv` unchanged
   (all `rv_idx∈{0,1,2,3}`, both `I_LBRM`, the buffer-wrap `E`). Gate: no edit is
   accepted until this is green and the committed vector file is byte-identical.
