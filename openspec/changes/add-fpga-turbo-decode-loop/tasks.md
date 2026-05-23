@@ -20,22 +20,22 @@
 
 ## 4. Simulation Lane
 
-- [ ] 4.1 Add `hdl/sim/turbo_decoder_top/` (Makefile + cocotb) mirroring established lanes; compile `turbo_decoder_top` + the reused `constituent_decoder`, `qpp_rom`, `qpp_interleaver`.
-- [ ] 4.2 Driver loads `K`/`max_iter`/`d_a`, collects the `K` hard bits; asserts **bit-exact** vs the fixed-point full-loop reference golden CSV.
-- [ ] 4.3 Artifacts covered by existing `.gitignore`.
+- [x] 4.1 Add `hdl/sim/turbo_decoder_top/` (Makefile + cocotb) mirroring established lanes; compile `turbo_decoder_top` + the reused `constituent_decoder`, `qpp_rom`, `qpp_interleaver`.
+- [x] 4.2 Driver loads `K`/`max_iter`/`d_a`, collects the `K` hard bits; asserts **bit-exact** vs the fixed-point full-loop reference golden CSV.
+- [x] 4.3 Artifacts covered by existing `.gitignore`.
 
 ## 5. Verification
 
-- [ ] 5.1 Inner gate: lane PASS bit-exact for all representative `K`/SNR/`H` vectors.
-- [ ] 5.2 Outer: bounded BER-vs-SNR characterization vs float `turbo_decoder.m` within the documented dB margin (recorded). Note the P1→P2 oracle shift (equivalence → BER).
-- [ ] 5.3 Regression: all prior HDL lanes + Octave suite still pass; reused cores (`constituent_decoder`, `qpp_rom`, `qpp_interleaver`) unmodified.
-- [ ] 5.4 Record results (vectors, `K`/SNR/`H` set, BER figures + margin).
+- [x] 5.1 Inner gate: lane PASS bit-exact for all representative `K`/SNR/`H` vectors.
+- [x] 5.2 Outer: bounded BER-vs-SNR characterization vs float `turbo_decoder.m` within the documented dB margin (recorded). Note the P1→P2 oracle shift (equivalence → BER).
+- [x] 5.3 Regression: all prior HDL lanes + Octave suite still pass; reused cores (`constituent_decoder`, `qpp_rom`, `qpp_interleaver`) unmodified.
+- [x] 5.4 Record results (vectors, `K`/SNR/`H` set, BER figures + margin).
 
 ## 6. Validation and Docs
 
-- [ ] 6.1 Add `hdl/sim/turbo_decoder_top/README.md` (two-tier method incl. the P2 BER-outer shift, CSV schema, regeneration, run, roadmap pointer).
-- [ ] 6.2 `npx openspec validate add-fpga-turbo-decode-loop --strict` passes.
-- [ ] 6.3 `npx openspec validate --all --strict` — no regression.
+- [x] 6.1 Add `hdl/sim/turbo_decoder_top/README.md` (two-tier method incl. the P2 BER-outer shift, CSV schema, regeneration, run, roadmap pointer).
+- [x] 6.2 `npx openspec validate add-fpga-turbo-decode-loop --strict` passes.
+- [x] 6.3 `npx openspec validate --all --strict` — no regression.
 
 ## 7. Follow-on Note (not required for completion)
 

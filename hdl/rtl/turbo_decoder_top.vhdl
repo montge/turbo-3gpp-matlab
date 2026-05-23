@@ -67,9 +67,13 @@ use work.qpp_rom_pkg.all;
 -- K hard bits; busy/done status).  Mirrors turbo_encode_top / tx_chain_top.
 --   Load protocol: after in_start (with k_in=K), stream the 3x(K+4) d_a matrix
 --   as K+4 column beats on da_valid, each beat presenting d_a(1)/d_a(2)/d_a(3)
---   for that column on da1_in/da2_in/da3_in (already W_IN-quantized signed
---   codes for the parity/termination grid; ch_sys body is widened to W_EXT
---   internally -- ch_sys and c_a/c_e share F_in so this is a width extend).
+--   for that column on da1_in/da2_in/da3_in. These carry W_EXT signed codes:
+--   the oracle quantizes the whole channel-LLR matrix to the W_EXT exchange
+--   grid (Q7.4) at step 0, then re-saturates per de-muxed row internally
+--   (ch_sys kept @ W_EXT; z_a/z'_a parity + termination triplets clipped to
+--   W_IN at the load de-mux below). The golden CSV stores d_a at W_EXT, so the
+--   ports MUST be W_EXT wide -- a W_IN port would clip channel LLRs that exceed
+--   the W_IN range before storage and break the bit-exact contract.
 -- ===========================================================================
 entity turbo_decoder_top is
   generic (
@@ -94,10 +98,18 @@ entity turbo_decoder_top is
     in_start  : in  std_logic;                          -- latch K, begin load
     k_in      : in  std_logic_vector(W_K-1 downto 0);   -- block length K
     -- LOAD: K+4 column beats of the 3x(K+4) d_a matrix (column-major).
+    -- d_a arrives on the W_EXT exchange grid (Q7.4, [-2048,2047]): the oracle
+    -- (fixedpoint_turbo_decoder.m step 0) quantizes the channel-LLR matrix to
+    -- W_EXT, then re-saturates each de-muxed row to its own width internally
+    -- (ch_sys @ W_EXT, z_a/z'_a parity + termination triplets @ W_IN). The
+    -- golden CSV stores d_a at W_EXT, so these ports MUST be W_EXT wide; the
+    -- per-row requantize-to-W_IN happens in the load de-mux below (z_a/z'_a/
+    -- termination) and at the core input (ch_sys-derived x_a). A W_IN port here
+    -- would clip channel LLRs before storage and break bit-exactness.
     da_valid  : in  std_logic;
-    da1_in    : in  std_logic_vector(W_IN-1 downto 0);  -- d_a(1,col): systematic
-    da2_in    : in  std_logic_vector(W_IN-1 downto 0);  -- d_a(2,col): upper parity
-    da3_in    : in  std_logic_vector(W_IN-1 downto 0);  -- d_a(3,col): lower parity
+    da1_in    : in  std_logic_vector(W_EXT-1 downto 0); -- d_a(1,col): systematic
+    da2_in    : in  std_logic_vector(W_EXT-1 downto 0); -- d_a(2,col): upper parity
+    da3_in    : in  std_logic_vector(W_EXT-1 downto 0); -- d_a(3,col): lower parity
     -- OUTPUT: K hard-decision bits, c[0] first.
     out_valid : out std_logic;
     out_last  : out std_logic;
@@ -351,34 +363,54 @@ begin
           --     x'_a(K+3)=d_a(2,K+4) z'_a(K+3)=d_a(3,K+4)
           -- (1-based .m -> here 0-based: column "K+1".m == lcol K, etc.;
           --  the termination triplet entry j=0..2 == array index K+j.)
+          -- d_a arrives on the W_EXT grid (range [-2048,2047]); the oracle
+          -- stores ch_sys at W_EXT but re-saturates the parity (z_a/z'_a) and
+          -- termination triplets to the core input grid W_IN (sat_round to
+          -- W_in == sat_clip of the W_ext code to W_in, since the W_ext round
+          -- never saturates these LLRs). So clip every parity/termination
+          -- store to [IN_MIN,IN_MAX] here; ch_sys keeps the W_EXT clip.
           when S_LOAD_D =>
             if da_valid = '1' then
               if lcol < Kr then
                 -- body column
                 chs_mem(lcol) <= sat_clip(to_integer(signed(da1_in)),
                                           EXT_MIN, EXT_MAX);
-                za_mem(lcol)  <= to_integer(signed(da2_in));
-                zpa_mem(lcol) <= to_integer(signed(da3_in));
+                za_mem(lcol)  <= sat_clip(to_integer(signed(da2_in)),
+                                          IN_MIN, IN_MAX);
+                zpa_mem(lcol) <= sat_clip(to_integer(signed(da3_in)),
+                                          IN_MIN, IN_MAX);
               elsif lcol = Kr then
                 -- termination column index 0 (== .m column K+1)
-                xa_term(0)    <= to_integer(signed(da1_in));  -- x_a(K+1)
-                za_mem(Kr)    <= to_integer(signed(da2_in));  -- z_a(K+1)
-                xa_term(1)    <= to_integer(signed(da3_in));  -- x_a(K+2)
+                xa_term(0)    <= sat_clip(to_integer(signed(da1_in)),
+                                          IN_MIN, IN_MAX);  -- x_a(K+1)
+                za_mem(Kr)    <= sat_clip(to_integer(signed(da2_in)),
+                                          IN_MIN, IN_MAX);  -- z_a(K+1)
+                xa_term(1)    <= sat_clip(to_integer(signed(da3_in)),
+                                          IN_MIN, IN_MAX);  -- x_a(K+2)
               elsif lcol = Kr + 1 then
                 -- .m column K+2
-                za_mem(Kr+1)  <= to_integer(signed(da1_in));  -- z_a(K+2)
-                xa_term(2)    <= to_integer(signed(da2_in));  -- x_a(K+3)
-                za_mem(Kr+2)  <= to_integer(signed(da3_in));  -- z_a(K+3)
+                za_mem(Kr+1)  <= sat_clip(to_integer(signed(da1_in)),
+                                          IN_MIN, IN_MAX);  -- z_a(K+2)
+                xa_term(2)    <= sat_clip(to_integer(signed(da2_in)),
+                                          IN_MIN, IN_MAX);  -- x_a(K+3)
+                za_mem(Kr+2)  <= sat_clip(to_integer(signed(da3_in)),
+                                          IN_MIN, IN_MAX);  -- z_a(K+3)
               elsif lcol = Kr + 2 then
                 -- .m column K+3
-                xpa_term(0)   <= to_integer(signed(da1_in));  -- x'_a(K+1)
-                zpa_mem(Kr)   <= to_integer(signed(da2_in));  -- z'_a(K+1)
-                xpa_term(1)   <= to_integer(signed(da3_in));  -- x'_a(K+2)
+                xpa_term(0)   <= sat_clip(to_integer(signed(da1_in)),
+                                          IN_MIN, IN_MAX);  -- x'_a(K+1)
+                zpa_mem(Kr)   <= sat_clip(to_integer(signed(da2_in)),
+                                          IN_MIN, IN_MAX);  -- z'_a(K+1)
+                xpa_term(1)   <= sat_clip(to_integer(signed(da3_in)),
+                                          IN_MIN, IN_MAX);  -- x'_a(K+2)
               else
                 -- lcol = Kr + 3  (.m column K+4)
-                zpa_mem(Kr+1) <= to_integer(signed(da1_in));  -- z'_a(K+2)
-                xpa_term(2)   <= to_integer(signed(da2_in));  -- x'_a(K+3)
-                zpa_mem(Kr+2) <= to_integer(signed(da3_in));  -- z'_a(K+3)
+                zpa_mem(Kr+1) <= sat_clip(to_integer(signed(da1_in)),
+                                          IN_MIN, IN_MAX);  -- z'_a(K+2)
+                xpa_term(2)   <= sat_clip(to_integer(signed(da2_in)),
+                                          IN_MIN, IN_MAX);  -- x'_a(K+3)
+                zpa_mem(Kr+2) <= sat_clip(to_integer(signed(da3_in)),
+                                          IN_MIN, IN_MAX);  -- z'_a(K+3)
               end if;
 
               if lcol = Kr + 3 then
