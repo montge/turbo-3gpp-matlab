@@ -18,14 +18,43 @@ use ieee.numeric_std.all;
 --     register (increment + conditional -N_cb each read step); the one-time
 --     pos = k_0 mod N_cb is computed by a divider-free shift/compare-subtract
 --     recurrence in S_K0MOD.
---   * The two w_bit/w_fill arrays are read SYNCHRONOUSLY (registered read
---     address) so they infer Cyclone II M4K block RAM; the one-cycle read
---     latency is absorbed by an S_PRIME beat so the emitted
---     (e_bit, out_valid, last) stream is identical cycle-for-cycle (modulo a
---     uniform one-cycle pipeline-fill that the read FSM hides).
+--   * The w arrays are read SYNCHRONOUSLY (registered read address) so they
+--     infer Cyclone II M4K block RAM; the one-cycle read latency is absorbed
+--     by an S_PRIME beat so the emitted (e_bit, out_valid, last) stream is
+--     identical cycle-for-cycle (modulo a uniform one-cycle pipeline-fill that
+--     the read FSM hides).
 --   * The loop index jj is bounded for synthesis.
 -- The standard-defined behaviour (which w positions are read, in what order,
 -- skipping fillers) is unchanged.
+--
+-- M4K block-RAM inference rework (add-fpga-block-ram-inference, stage 1):
+--   The TS36.212 w-construction writes THREE positions per loaded column
+--   (w[k]=v1, w[K_Pi+2k]=v2, w[K_Pi+2k+1]=v3). A single M4K write port does
+--   one write/cycle, and Quartus II 13.0sp1 also refuses to map an array whose
+--   write lives inside the synchronous-reset-guarded FSM body. Both problems
+--   are solved together by BANK-SPLITTING w into three 1W/1R simple-dual-port
+--   arrays sized K_Pi each -- w_sys (systematic, row 1), w_ev (even parity,
+--   row 2), w_od (odd parity, row 3) -- each written by ONE port at column
+--   index cidx, in a dedicated unconditional clocked memory process (the write
+--   is lifted out of the reset/case nest; the FSM drives only the write-data /
+--   write-enable / write-column and the read address). The circular READ maps
+--   a w position pos in [0,K_w) back to its bank: pos<K_Pi -> w_sys[pos];
+--   else r=pos-K_Pi, r even -> w_ev[r/2], r odd -> w_od[r/2] (r/2 = r>>1,
+--   divider-free). The bank select is registered alongside the per-bank
+--   registered reads so the one-cycle-later data mux picks the right bank.
+--   Bit-exactness is unchanged: the same w contents are presented before the
+--   read begins; the cocotb circular_buffer lane is the gate. The ramstyle
+--   "M4K" attribute pins the intent. (rate_matching + encoder buffers are
+--   stages 2-3.)
+--   Recorded Quartus II 13.0sp1 (EP2C35F672C6) synthesis-oracle result, full
+--   KW_MAX=18528 (K_Pi up to 6176) standalone harness, before -> after:
+--     Total memory bits : 0       -> 49,152 (of 483,840, 10%)
+--     M4K block RAM      : 0       -> 12 (of 105, 11%; altsyncram inferred,
+--                                    simple-dual-port, RDW=OLD_DATA)
+--     Total logic elements: 115,074 (2.5x+ over EP2C35) -> 584 (2%); fits.
+--     Fmax (CLOCK_50)    : closes 50 MHz; restricted Fmax 96.48 MHz,
+--                          worst-case setup slack +9.635 ns, hold +0.391 ns.
+--   i.e. the w memories now infer M4K instead of collapsing to LE registers.
 entity circular_buffer is
   generic (
     -- Max w-buffer depth K_w = 3*K_Pi. Defaults to the TS36.212 maximum
@@ -55,16 +84,54 @@ entity circular_buffer is
 end entity circular_buffer;
 
 architecture rtl of circular_buffer is
-  type bit_arr is array (0 to KW_MAX-1) of std_logic;
-  signal w_bit  : bit_arr := (others => '0');
-  signal w_fill : bit_arr := (others => '0');
+  -- Bank-split w: three 1W/1R arrays of depth K_Pi_max = KW_MAX/3, each
+  -- written by one port (systematic / even-parity / odd-parity), so each is a
+  -- clean single-write-port M4K candidate. KW_MAX is always 3*K_Pi for the
+  -- instantiated max, so the integer divide is exact.
+  constant BANK_MAX : integer := KW_MAX / 3;        -- max per-bank depth (K_Pi)
+  type bit_arr is array (0 to BANK_MAX-1) of std_logic;
+  signal w_sys_bit  : bit_arr := (others => '0');   -- row 1 (systematic)
+  signal w_sys_fill : bit_arr := (others => '0');
+  signal w_ev_bit   : bit_arr := (others => '0');   -- row 2 (even parity)
+  signal w_ev_fill  : bit_arr := (others => '0');
+  signal w_od_bit   : bit_arr := (others => '0');   -- row 3 (odd parity)
+  signal w_od_fill  : bit_arr := (others => '0');
 
-  -- Synchronous-read pipeline registers for w_bit/w_fill (registered read
-  -- address -> M4K). rd_bit/rd_fill hold the data read for the address that
-  -- was presented on the previous clock edge.
+  -- Pin block-RAM intent (Cyclone II: M4K is the only block-RAM flavour). The
+  -- structural fix (single write port + write lifted out of the reset-guarded
+  -- FSM body) is what makes it infer; the attribute guards the intent so a
+  -- future edit that re-buries the write fails loudly rather than silently
+  -- reverting to LE registers.
+  attribute ramstyle : string;
+  attribute ramstyle of w_sys_bit  : signal is "M4K";
+  attribute ramstyle of w_sys_fill : signal is "M4K";
+  attribute ramstyle of w_ev_bit   : signal is "M4K";
+  attribute ramstyle of w_ev_fill  : signal is "M4K";
+  attribute ramstyle of w_od_bit   : signal is "M4K";
+  attribute ramstyle of w_od_fill  : signal is "M4K";
+
+  -- ----- Write side (FSM-driven controls; the array write itself lives in a
+  -- dedicated unconditional memory process, NOT in the reset/case nest). -----
+  signal wr_en   : std_logic := '0';                -- load this column now
+  signal wr_col  : integer range 0 to BANK_MAX-1 := 0;  -- column index = cidx
+  signal wr_sys_bit, wr_sys_fill : std_logic := '0';    -- v1
+  signal wr_ev_bit,  wr_ev_fill  : std_logic := '0';    -- v2
+  signal wr_od_bit,  wr_od_fill  : std_logic := '0';    -- v3
+
+  -- ----- Synchronous-read pipeline. rd_addr is a w position in [0,K_w). It is
+  -- decoded combinationally to a per-bank address + a bank-select tag; the
+  -- per-bank reads register one cycle later, and the tag (registered alongside)
+  -- selects which bank's data lands in rd_bit/rd_fill. ----------------------
   signal rd_addr : integer range 0 to KW_MAX-1 := 0;
   signal rd_bit  : std_logic := '0';
   signal rd_fill : std_logic := '0';
+
+  -- bank-select tag for the address issued last edge: 0=sys, 1=ev, 2=od.
+  signal rd_sel  : integer range 0 to 2 := 0;
+  -- per-bank registered read data (each a registered read of its own RAM).
+  signal rd_sys_bit, rd_sys_fill : std_logic := '0';
+  signal rd_ev_bit,  rd_ev_fill  : std_logic := '0';
+  signal rd_od_bit,  rd_od_fill  : std_logic := '0';
 
   type state_t is (S_IDLE, S_LOAD, S_QCALC, S_K0MOD, S_PRIME, S_READ, S_DONE);
   signal st : state_t := S_IDLE;
@@ -98,17 +165,66 @@ begin
   e_bit     <= eb;
   last      <= lst;
 
+  -- ---------------------------------------------------------------------------
+  -- Dedicated memory process: the three bank arrays' writes and registered
+  -- reads live here ONLY, with NO synchronous reset on the array bodies (the
+  -- M4K write-port template the reduced test confirmed). The FSM drives the
+  -- write controls (wr_en/wr_col/wr_*) and the read address (rd_addr); it never
+  -- touches the arrays directly. Each bank has exactly one write port.
+  -- ---------------------------------------------------------------------------
+  mem : process (clk)
+    variable r, ba : integer;
+  begin
+    if rising_edge(clk) then
+      -- One write per bank per loaded column (single-write-port, M4K-clean).
+      if wr_en = '1' then
+        w_sys_bit(wr_col)  <= wr_sys_bit;
+        w_sys_fill(wr_col) <= wr_sys_fill;
+        w_ev_bit(wr_col)   <= wr_ev_bit;
+        w_ev_fill(wr_col)  <= wr_ev_fill;
+        w_od_bit(wr_col)   <= wr_od_bit;
+        w_od_fill(wr_col)  <= wr_od_fill;
+      end if;
+
+      -- Registered reads of all three banks at the decoded bank address, plus
+      -- the registered bank-select tag. rd_addr is a w position in [0,K_w);
+      -- decode it to (bank, bank-address): pos<K_Pi -> sys[pos]; else r=pos-K_Pi
+      -- with r even -> ev[r/2], r odd -> od[r/2] (r/2 = r>>1, divider-free).
+      if rd_addr < K_Pi then
+        ba := rd_addr;
+        rd_sel <= 0;
+      else
+        r  := rd_addr - K_Pi;
+        ba := r / 2;                  -- exact shift-right-1 (constant divisor 2)
+        if (r mod 2) = 0 then
+          rd_sel <= 1;                -- even parity bank
+        else
+          rd_sel <= 2;                -- odd parity bank
+        end if;
+      end if;
+      rd_sys_bit  <= w_sys_bit(ba);
+      rd_sys_fill <= w_sys_fill(ba);
+      rd_ev_bit   <= w_ev_bit(ba);
+      rd_ev_fill  <= w_ev_fill(ba);
+      rd_od_bit   <= w_od_bit(ba);
+      rd_od_fill  <= w_od_fill(ba);
+    end if;
+  end process mem;
+
+  -- Bank-select mux: rd_bit/rd_fill hold the data for the address presented on
+  -- the previous edge, exactly like the old single-array sync read did.
+  rd_bit  <= rd_sys_bit  when rd_sel = 0 else
+             rd_ev_bit   when rd_sel = 1 else rd_od_bit;
+  rd_fill <= rd_sys_fill when rd_sel = 0 else
+             rd_ev_fill  when rd_sel = 1 else rd_od_fill;
+
   process (clk)
     variable rtc, kw, ncb : integer;
   begin
     if rising_edge(clk) then
       ov  <= '0';
       lst <= '0';
-
-      -- Synchronous-read of w_bit/w_fill: data for the address presented on
-      -- the previous edge appears here. This is the M4K-inferable read.
-      rd_bit  <= w_bit(rd_addr);
-      rd_fill <= w_fill(rd_addr);
+      wr_en <= '0';                 -- write only on the cycle a v column lands
 
       if rst = '1' then
         st <= S_IDLE;
@@ -136,12 +252,14 @@ begin
 
           when S_LOAD =>
             if v_valid = '1' then
-              w_bit(cidx)              <= v1_bit;
-              w_fill(cidx)             <= v1_fill;
-              w_bit(K_Pi + 2*cidx)     <= v2_bit;
-              w_fill(K_Pi + 2*cidx)    <= v2_fill;
-              w_bit(K_Pi + 2*cidx + 1) <= v3_bit;
-              w_fill(K_Pi + 2*cidx + 1)<= v3_fill;
+              -- Drive the single-write-port memory process: one write per bank
+              -- at column cidx (w_sys[cidx]=v1, w_ev[cidx]=v2, w_od[cidx]=v3).
+              -- The actual array writes happen in the mem process this edge.
+              wr_en       <= '1';
+              wr_col      <= cidx;
+              wr_sys_bit  <= v1_bit;  wr_sys_fill <= v1_fill;
+              wr_ev_bit   <= v2_bit;  wr_ev_fill  <= v2_fill;
+              wr_od_bit   <= v3_bit;  wr_od_fill  <= v3_fill;
               if cidx = K_Pi - 1 then
                 -- Set up the divider-free q recurrence: q = ceil(ncb/step),
                 -- step = 8*R_TC = 8*(K_Pi/32) = K_Pi/4.

@@ -1,29 +1,40 @@
 ## 1. `circular_buffer` `w_bit`/`w_fill` → M4K-inferable (bit-exact)
 
-- [ ] 1.1 Lift the `w_bit`/`w_fill` writes out of the `if rst='1' … else case st
+- [x] 1.1 Lift the `w_bit`/`w_fill` writes out of the `if rst='1' … else case st
   … when S_LOAD` body (~lines 113–144) into a dedicated unconditional clocked
   memory process; the FSM drives only write-address / write-enable / write-data
   and the registered read address `rd_addr`, never the arrays directly.
-- [ ] 1.2 Re-sequence the three-writes-per-`v`-column load (`w[cidx]`,
+- [x] 1.2 Re-sequence the three-writes-per-`v`-column load (`w[cidx]`,
   `w[K_Pi+2·cidx]`, `w[K_Pi+2·cidx+1]`, ~lines 139–144) into a single-write-port
   schedule (sub-beats per column, or a two-bank even/odd-address split with one
   write/bank/cycle) so each array is a clean 1W port; the loaded `w` contents
   before the read begins MUST be identical.
-- [ ] 1.3 Keep the synchronous read (`rd_addr` → `rd_bit`/`rd_fill`, ~lines
+  (Done via THREE-bank split: `w_sys`/`w_ev`/`w_od`, each K_Pi-deep, written by
+  one port at column `cidx`; the circular read decodes pos→bank.)
+- [x] 1.3 Keep the synchronous read (`rd_addr` → `rd_bit`/`rd_fill`, ~lines
   110–111) and the `S_PRIME` latency-absorb beat unchanged; ensure the load and
   read phases stay disjoint (no same-address read-during-write on the bit-exact
-  path).
-- [ ] 1.4 Add `ramstyle = "M4K"` attributes to `w_bit`/`w_fill`; keep the
+  path). (Per-bank reads registered in the mem process; `rd_bit`/`rd_fill` are a
+  registered-tag bank mux with identical one-cycle latency; load fully precedes
+  read so RDW=OLD_DATA is harmless.)
+- [x] 1.4 Add `ramstyle = "M4K"` attributes to `w_bit`/`w_fill`; keep the
   `:= (others => '0')` init; confirm no async clear on the array body.
-- [ ] 1.5 **Inner gate:** re-run the `circular_buffer` cocotb/GHDL lane
+  (Attributes on all six bank arrays; init kept; no async clear — confirmed
+  `ADDRESS_ACLR = NONE` in the inferred altsyncram.)
+- [x] 1.5 **Inner gate:** re-run the `circular_buffer` cocotb/GHDL lane
   (`hdl/sim/circular_buffer/`) — MUST pass bit-for-bit with
   `hdl/vectors/circular_buffer.csv` byte-identical (all `rv_idx∈{0,1,2,3}`, both
   `I_LBRM`, the wrap `E`). No edit accepted until green + vectors unchanged.
-- [ ] 1.6 **Outer gate (per-memory):** synthesize `circular_buffer` at full
+  (PASS=2/2 bit-exact; `scripts/run_all_hdl_lanes.sh` 14/14 PASS; vectors
+  byte-identical — `git diff hdl/vectors/` empty.)
+- [x] 1.6 **Outer gate (per-memory):** synthesize `circular_buffer` at full
   `KW_MAX=18528` under Quartus II 13.0sp1; confirm the report shows the
   `w_bit`/`w_fill` arrays inferred (`Total memory bits > 0`, M4K segments), not
   LE registers. Record the count. (Fall back to explicit `altsyncram` only if it
   still resists — design Decision 4.)
+  (BEFORE: memory bits 0, 115,074 LE. AFTER: 49,152 memory bits / 12 M4K,
+  584 LE, fits EP2C35, Fmax 96.48 MHz, setup +9.635 ns / hold +0.391 ns.
+  Inference clean — no altsyncram fallback needed.)
 
 ## 2. `rate_matching_top` `d1/d2/d3buf` → M4K-inferable (bit-exact)
 
