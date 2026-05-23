@@ -24,6 +24,28 @@ use ieee.numeric_std.all;
 -- circular_buffer is driven by the registered valid -- so the v columns loaded
 -- into the circular buffer are byte-identical, only uniformly shifted by the
 -- one-cycle pipeline fill that this FSM hides.
+--
+-- M4K block-RAM inference (add-fpga-block-ram-inference, stage 2): the three
+-- d1/d2/d3buf WRITES are LIFTED OUT of the reset-guarded FSM body into a
+-- dedicated unconditional clocked memory process (mem_proc). Quartus II
+-- 13.0sp1 refuses to map an array to M4K when its write is nested inside the
+-- `if rst='1' then .. else case st ..` synchronous-reset branch (it reads that
+-- as a reset/clear on the array body, violating the M4K write-port template,
+-- and falls back to LE registers -> `Total memory bits : 0`). With the write
+-- at the top level of its own clocked process -- gated only by a write-enable
+-- the FSM drives, never by reset -- each buffer is a clean 1W/1R simple-dual-
+-- port M4K (`ramstyle="M4K"`), bit-exact to the golden vectors. The reset still
+-- controls the FSM/counters in the control process; it just never touches the
+-- array contents. Read side (registered-address sync read) is unchanged.
+--
+-- Verified (Quartus II 13.0sp1, EP2C35F672C6, DMAX=6148 default, isolated
+-- rate_matching_top synthesis harness): d1/d2/d3buf each infer as an
+-- altsyncram Simple-Dual-Port M4K (8192 memory bits each). Analysis & Synthesis
+-- Total memory bits 0 -> 24,576; LE 110,000 -> 79,023; registers 49,689 ->
+-- 37,392; M4Ks 0 -> 6 (each buffer spans 2 M4K at 6148 deep). cocotb:
+-- rate_matching_top + tx_chain_top lanes PASS bit-exact, golden vectors
+-- byte-identical. (Device fit + 50 MHz close is the full-chain gate once the
+-- sibling circular_buffer + encoder stages also infer M4K.)
 entity rate_matching_top is
   generic (
     -- Max input length D the three d-input buffers are sized for. Defaults to
@@ -85,6 +107,13 @@ architecture rtl of rate_matching_top is
 
   type bit_arr is array (0 to DMAX-1) of std_logic;
   signal d1buf, d2buf, d3buf : bit_arr := (others => '0');
+  -- Belt-and-suspenders: assert M4K block-RAM mapping at the source so a future
+  -- edit that re-buries the write fails loudly (wrong resource) rather than
+  -- silently reverting to LE. Cyclone II's only block-RAM flavour is M4K.
+  attribute ramstyle : string;
+  attribute ramstyle of d1buf : signal is "M4K";
+  attribute ramstyle of d2buf : signal is "M4K";
+  attribute ramstyle of d3buf : signal is "M4K";
 
   -- Synchronous-read pipeline registers for d1/d2/d3buf (registered read
   -- output -> M4K). rd1/rd2/rd3 hold the buffer data for the address that was
@@ -101,6 +130,10 @@ architecture rtl of rate_matching_top is
   signal Dr   : unsigned(12 downto 0) := (others => '0');
   signal KPi  : unsigned(13 downto 0) := (others => '0');
   signal widx : integer range 0 to DMAX := 0;
+  -- Write-enable for the lifted memory process: the FSM asserts it (purely
+  -- combinationally below) while loading a d column; the array write itself
+  -- lives in mem_proc, never under the reset/case nest.
+  signal d_we : std_logic := '0';
 
   signal sub_start, cb_start, cb_vv : std_logic := '0';
 
@@ -160,17 +193,40 @@ begin
   e_bit     <= cb_eb;
   last      <= cb_lst when (st = S_WAIT) else '0';
 
-  process (clk)
+  -- Write-enable: load a d column iff in S_LOADD with d_valid. Purely
+  -- combinational off the FSM state so the array write in mem_proc is gated
+  -- only by this enable, never by the synchronous reset.
+  d_we <= '1' when (st = S_LOADD and d_valid = '1') else '0';
+
+  -- Dedicated UNCONDITIONAL clocked memory process (mem_proc). The three buffer
+  -- writes are LIFTED here out of the reset-guarded FSM body so each d*buf maps
+  -- to an M4K simple-dual-port (Quartus 13.0sp1 will not infer M4K when the
+  -- write is nested under `if rst .. else case ..`). No reset on the array
+  -- body. Behaviour is identical: under reset the FSM never reaches S_LOADD, so
+  -- d_we is '0' and no spurious write occurs; the read side is unchanged.
+  mem_proc : process (clk)
   begin
     if rising_edge(clk) then
       -- Synchronous read of d1/d2/d3buf: the read output is registered, so the
       -- data for the subblock index presented at this edge appears next edge
-      -- (M4K-inferable). The filler and valid taps are registered by the same
-      -- one cycle so each v column the circular buffer loads is identical,
-      -- only shifted by one cycle.
+      -- (M4K-inferable). The filler and valid taps are registered (in the
+      -- control process) by the same one cycle so each v column the circular
+      -- buffer loads is identical, only shifted by one cycle.
       rd1 <= d1buf(to_integer(unsigned(s0_idx)));
       rd2 <= d2buf(to_integer(unsigned(s1_idx)));
       rd3 <= d3buf(to_integer(unsigned(s2_idx)));
+      -- Top-level write (1W port each): gated by d_we only.
+      if d_we = '1' then
+        d1buf(widx) <= d1_in;
+        d2buf(widx) <= d2_in;
+        d3buf(widx) <= d3_in;
+      end if;
+    end if;
+  end process;
+
+  process (clk)
+  begin
+    if rising_edge(clk) then
       f0_p <= s0_f;
       f1_p <= s1_f;
       f2_p <= s2_f;
@@ -200,10 +256,10 @@ begin
             end if;
 
           when S_LOADD =>
+            -- The buffer writes are lifted to mem_proc (gated by d_we, which is
+            -- '1' exactly here when d_valid='1'); this process only advances the
+            -- write index / state so the write address evolves identically.
             if d_valid = '1' then
-              d1buf(widx) <= d1_in;
-              d2buf(widx) <= d2_in;
-              d3buf(widx) <= d3_in;
               if widx = to_integer(Dr) - 1 then
                 st <= S_INIT;
               else

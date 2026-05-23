@@ -38,19 +38,22 @@
 
 ## 2. `rate_matching_top` `d1/d2/d3buf` → M4K-inferable (bit-exact)
 
-- [ ] 2.1 Lift the `d1/d2/d3buf` writes out of the `if rst … else case st …
+- [x] 2.1 Lift the `d1/d2/d3buf` writes out of the `if rst … else case st …
   when S_LOADD` body (~lines 179–212) into a top-level memory process; the FSM
   drives only the write address (`widx`) / write-enable / write-data and the
   read addresses (`s0/s1/s2_idx`).
-- [ ] 2.2 Keep each buffer a 1W/1R simple-dual-port (registered reads
+- [x] 2.2 Keep each buffer a 1W/1R simple-dual-port (registered reads
   `rd1/rd2/rd3`, ~lines 171–173) with its pipelined filler/valid taps so the
   `circular_buffer` `v` columns load unchanged; add `ramstyle = "M4K"`.
-- [ ] 2.3 **Inner gate:** re-run `rate_matching_top` (and the downstream
+- [x] 2.3 **Inner gate:** re-run `rate_matching_top` (and the downstream
   `tx_chain_top`) cocotb/GHDL lanes — MUST stay bit-for-bit with
   `hdl/vectors/rate_matching.csv` and `tx_chain.csv` byte-identical.
-- [ ] 2.4 **Outer gate (per-memory):** synthesize `rate_matching_top` at full
+- [x] 2.4 **Outer gate (per-memory):** synthesize `rate_matching_top` at full
   `DMAX=6148`/`KW_MAX=18528`; confirm `d1/d2/d3buf` infer M4K (`memory bits > 0`).
-  Record the count.
+  Record the count. (Quartus II 13.0sp1, EP2C35F672C6: each `d*buf` inferred as
+  altsyncram Simple-Dual-Port, 8192 bits; Total memory bits 0 → 24,576; M4Ks
+  0 → 6; LE 110,000 → 79,023. Isolated harness; device fit/Fmax = full-chain
+  gate task 4 once sibling stages land.)
 
 ## 3. `turbo_encode_top` `buf` → M4K-inferable (bit-exact)
 
