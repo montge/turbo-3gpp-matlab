@@ -46,6 +46,14 @@ use work.qpp_rom_pkg.all;
 -- cycle it is written (load completes before the read phase), so the inferred
 -- READ_DURING_WRITE_MODE is don't-care.
 --
+-- Verified (Quartus II 13.0sp1, EP2C35F672C6, MAXK=6144 default): buf_a/buf_b
+-- each infer altsyncram simple-dual-port M4K. Standalone before -> after:
+-- Total memory bits 0 -> 16,384, 4 M4K (2 per copy), 15,619 -> 744 LE, Fmax
+-- 71.51 -> 117.38 MHz. Integrated full-K=6144 tx_chain_top fit (stage 4): the
+-- whole chain fits the EP2C35 -- 22/105 M4K, 90,112 memory bits, 1,716/33,216
+-- LE, 605 registers, Fmax 89.33 MHz on CLOCK_50 (was ~85k LE = did not fit).
+-- All 14 cocotb/GHDL lanes PASS bit-exact; golden vectors byte-identical.
+--
 -- FSM control signals are otherwise combinational (Mealy) so the clocked
 -- sub-cores sample them aligned, exactly reproducing the stimulus that
 -- verified turbo_encoder / qpp_interleaver standalone.

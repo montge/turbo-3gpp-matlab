@@ -78,32 +78,56 @@
 
 ## 4. Full-`K` `tx_chain_top` fit + timing (the synthesis oracle)
 
-- [ ] 4.1 Build a **full-`K`** `tx_chain_top` Quartus project (target
+- [x] 4.1 Build a **full-`K`** `tx_chain_top` Quartus project (target
   `MAXK=6144`/`DMAX=6148`/`KW_MAX=18528`, or the documented intermediate) under
   Quartus II 13.0sp1, `EP2C35F672C6`, VHDL_2008 — Full Compilation, 0 errors.
-- [ ] 4.2 **Assert the fit-report oracle:** `Total memory bits > 0` and inferred
+  (Built `tx_chain_fullk_synth_top` — a minimal harness wiring `tx_chain_top` at
+  its DEFAULT generics to pins so nothing is pruned — in a scratch dir. Quartus
+  II 13.0.1 SP1 Full Compilation: 0 errors, 17 warnings.)
+- [x] 4.2 **Assert the fit-report oracle:** `Total memory bits > 0` and inferred
   **M4K > 0** (expectation ≈ 12 M4K / ~55 Kbit of 105 M4K / 483,840 bits);
   device **fits** (LE ≪ 33,216 — the buffers are no longer LE register banks);
   DSP/multipliers = 0. Record LE / M4K / memory-bit / register counts. This is
   the deliverable that proves the inference fix (contrast: the K=40 demo's
   `M4K = 0`).
-- [ ] 4.3 Confirm TimeQuest closes setup and hold for the 50 MHz `CLOCK_50`
+  (RESULT: Total memory bits **90,112 / 483,840 (19%)**; **22 M4K / 105 (21%)** —
+  12 circular_buffer + 6 rate_matching + 4 encoder, all inferred as altsyncram
+  simple-dual-port; **1,716 / 33,216 LE (5%)** — FITS with huge headroom; 605
+  registers. NOTE: 2 embedded 9-bit multipliers / 70 (3%) appear at full
+  KW_MAX from circular_buffer's N_cb/q index arithmetic — the parameterized-down
+  K=40 demo had 0; unrelated to the M4K fix, trivial, design still fits.)
+- [x] 4.3 Confirm TimeQuest closes setup and hold for the 50 MHz `CLOCK_50`
   domain (**`Fmax ≥ 50 MHz`**, positive slacks); no unconstrained-path warnings
   beyond intentionally false-pathed async I/O. Record `Fmax` / slacks.
-- [ ] 4.4 Confirm `git status` after compile shows only intended sources (no
+  (**Fmax 89.33 MHz** on CLOCK_50; slow-model setup slack **+8.805 ns**, hold
+  **+0.391 ns**; design fully constrained for setup and hold — 50 MHz closes.)
+- [x] 4.4 Confirm `git status` after compile shows only intended sources (no
   `db/`, `output_files/`, `*.sof`, report artifacts) — `.gitignore` covers them.
+  (Built in a scratch dir OUTSIDE the repo; `git status` shows only the new
+  `hdl/boards/de2/tx_chain_fullk_synth_top.vhdl` harness source — no artifacts.)
 
 ## 5. Documentation + validation
 
-- [ ] 5.1 Update the RTL headers of `circular_buffer.vhdl`,
+- [x] 5.1 Update the RTL headers of `circular_buffer.vhdl`,
   `rate_matching_top.vhdl`, `turbo_encode_top.vhdl` to record that the M4K
   block-RAM inference rework landed (write lifted out of the reset-guarded FSM;
   `ramstyle = "M4K"`), that bit-exactness is preserved (cocotb gate green,
   vectors unchanged), and the full-`K` fit numbers.
-- [ ] 5.2 Add an `hdl/boards/de2/` (or `hdl/docs/`) note recording the full-`K`
+  (Per-core headers already record the write-lift + ramstyle + per-memory fit
+  from stages 1-3; added a concise integrated full-K=6144 line — 22/105 M4K,
+  90,112 memory bits, 1,716/33,216 LE, 605 regs, Fmax 89.33 MHz — to all three.)
+- [x] 5.2 Add an `hdl/boards/de2/` (or `hdl/docs/`) note recording the full-`K`
   fit report (LE / M4K / Fmax) and contrasting it with the prior K=40 demo's
   `M4K = 0` parameterized-down fit — the before/after that demonstrates the fix.
-- [ ] 5.3 Re-run the full HDL cocotb suite and the Octave software suite —
+  (Added a "Full-`K`=6144 synthesis-oracle fit" section to
+  `hdl/boards/de2/tx_chain_de2_README.md` with the before→after table and the
+  per-core M4K decomposition.)
+- [x] 5.3 Re-run the full HDL cocotb suite and the Octave software suite —
   confirm no sim/software regression and all golden vectors byte-identical.
-- [ ] 5.4 Run `npx openspec validate add-fpga-block-ram-inference --strict` and
+  (HDL cocotb: `scripts/run_all_hdl_lanes.sh` = **14/14 PASS** bit-exact, both
+  before and after the doc/header edits. Golden vectors **byte-identical** to
+  master — `git diff master -- hdl/vectors/` empty. Octave: NOT installed on
+  this host; but no `.m` source changed and the vectors are unchanged from
+  master, so there is no software path to regress — see report note.)
+- [x] 5.4 Run `npx openspec validate add-fpga-block-ram-inference --strict` and
   `npx openspec validate --all --strict` — both pass, no regression.

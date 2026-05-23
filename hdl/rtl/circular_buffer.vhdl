@@ -55,6 +55,10 @@ use ieee.numeric_std.all;
 --     Fmax (CLOCK_50)    : closes 50 MHz; restricted Fmax 96.48 MHz,
 --                          worst-case setup slack +9.635 ns, hold +0.391 ns.
 --   i.e. the w memories now infer M4K instead of collapsing to LE registers.
+--   Integrated full-K=6144 tx_chain_top fit (stage 4, with the sibling encoder
+--   + rate-match M4K fixes): 22/105 M4K, 90,112 memory bits, 1,716/33,216 LE,
+--   605 registers, Fmax 89.33 MHz on CLOCK_50 -- the whole chain fits the
+--   EP2C35 via block RAM (was ~85k LE as logic = did not fit).
 entity circular_buffer is
   generic (
     -- Max w-buffer depth K_w = 3*K_Pi. Defaults to the TS36.212 maximum

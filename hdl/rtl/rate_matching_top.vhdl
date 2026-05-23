@@ -46,6 +46,10 @@ use ieee.numeric_std.all;
 -- rate_matching_top + tx_chain_top lanes PASS bit-exact, golden vectors
 -- byte-identical. (Device fit + 50 MHz close is the full-chain gate once the
 -- sibling circular_buffer + encoder stages also infer M4K.)
+-- Integrated full-K=6144 tx_chain_top fit (stage 4): the whole chain fits the
+-- EP2C35 -- 22/105 M4K, 90,112 memory bits, 1,716/33,216 LE, 605 registers,
+-- Fmax 89.33 MHz on CLOCK_50 (was ~85k LE as logic = did not fit). All 14
+-- cocotb/GHDL lanes PASS bit-exact; golden vectors byte-identical.
 entity rate_matching_top is
   generic (
     -- Max input length D the three d-input buffers are sized for. Defaults to
