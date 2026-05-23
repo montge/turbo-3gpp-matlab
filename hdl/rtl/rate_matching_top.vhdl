@@ -13,6 +13,17 @@ use ieee.numeric_std.all;
 -- lockstep so element k of all three is presented on the same cycle) and one
 -- UNMODIFIED circular_buffer. Only the orchestration FSM + the 3xD input
 -- buffer are new. Sim-first (sub-cores keep their arithmetic).
+--
+-- Synthesis-hardened (DE2/Cyclone II): the three D-input buffers d1/d2/d3buf
+-- are read SYNCHRONOUSLY (registered read address -> M4K block RAM) instead of
+-- the original combinational (async) read, WITHOUT changing a single output
+-- bit (the rate_matching_top / tx_chain_top cocotb lanes stay bit-exact vs the
+-- committed golden vectors). The one-cycle read latency is absorbed by a single
+-- pipeline-register beat: each cycle the subblock taps (read address + filler +
+-- valid) are registered, the buffer data lands one edge later, and v_valid to
+-- circular_buffer is driven by the registered valid -- so the v columns loaded
+-- into the circular buffer are byte-identical, only uniformly shifted by the
+-- one-cycle pipeline fill that this FSM hides.
 entity rate_matching_top is
   port (
     clk      : in  std_logic;
@@ -67,6 +78,15 @@ architecture rtl of rate_matching_top is
   type bit_arr is array (0 to DMAX-1) of std_logic;
   signal d1buf, d2buf, d3buf : bit_arr := (others => '0');
 
+  -- Synchronous-read pipeline registers for d1/d2/d3buf (registered read
+  -- output -> M4K). rd1/rd2/rd3 hold the buffer data for the address that was
+  -- presented (combinationally) on the previous clock edge; the filler/valid
+  -- taps are pipelined by the SAME one cycle so each circular_buffer v column
+  -- is loaded unchanged, just shifted by one cycle.
+  signal rd1, rd2, rd3 : std_logic := '0';
+  signal f0_p, f1_p, f2_p : std_logic := '0';  -- pipelined fillers
+  signal vv_p : std_logic := '0';              -- pipelined column-valid
+
   type state_t is (S_IDLE, S_LOADD, S_INIT, S_STREAM, S_WAIT, S_DONE);
   signal st : state_t := S_IDLE;
 
@@ -101,10 +121,12 @@ begin
               d_in => std_logic_vector(Dr), idx_in => "10",
               valid => s2_v, filler => s2_f, idx_o => s2_idx, last => s2_l);
 
-  -- v(r,k) = filler ? 0 : d_r[idx_o_r]   (async read of the input buffers)
-  v1b <= '0' when s0_f = '1' else d1buf(to_integer(unsigned(s0_idx)));
-  v2b <= '0' when s1_f = '1' else d2buf(to_integer(unsigned(s1_idx)));
-  v3b <= '0' when s2_f = '1' else d3buf(to_integer(unsigned(s2_idx)));
+  -- v(r,k) = filler ? 0 : d_r[idx_o_r]   (synchronous read: rd* is the buffer
+  -- data registered one edge after the address; f*_p the matching pipelined
+  -- filler). A filler column reads 0 exactly as before.
+  v1b <= '0' when f0_p = '1' else rd1;
+  v2b <= '0' when f1_p = '1' else rd2;
+  v3b <= '0' when f2_p = '1' else rd3;
 
   i_cb : circular_buffer
     port map (clk => clk, rst => rst, start => cb_start,
@@ -112,15 +134,18 @@ begin
               n_ref_in => n_ref_in, i_lbrm => i_lbrm,
               rv_in => rv_in, e_in => e_in,
               v_valid => cb_vv,
-              v1_bit => v1b, v1_fill => s0_f,
-              v2_bit => v2b, v2_fill => s1_f,
-              v3_bit => v3b, v3_fill => s2_f,
+              v1_bit => v1b, v1_fill => f0_p,
+              v2_bit => v2b, v2_fill => f1_p,
+              v3_bit => v3b, v3_fill => f2_p,
               out_valid => cb_ov, e_bit => cb_eb, last => cb_lst);
 
   -- Combinational FSM control.
   sub_start <= '1' when st = S_INIT else '0';
   cb_start  <= '1' when st = S_INIT else '0';
-  cb_vv     <= '1' when st = S_STREAM else '0';
+  -- v_valid is the pipelined subblock-valid: each v column reaches the
+  -- circular buffer one cycle after the subblock presents it (matching the
+  -- registered-address read latency), keeping the loaded columns identical.
+  cb_vv     <= vv_p;
 
   out_valid <= cb_ov when (st = S_WAIT) else '0';
   e_bit     <= cb_eb;
@@ -129,8 +154,22 @@ begin
   process (clk)
   begin
     if rising_edge(clk) then
+      -- Synchronous read of d1/d2/d3buf: the read output is registered, so the
+      -- data for the subblock index presented at this edge appears next edge
+      -- (M4K-inferable). The filler and valid taps are registered by the same
+      -- one cycle so each v column the circular buffer loads is identical,
+      -- only shifted by one cycle.
+      rd1 <= d1buf(to_integer(unsigned(s0_idx)));
+      rd2 <= d2buf(to_integer(unsigned(s1_idx)));
+      rd3 <= d3buf(to_integer(unsigned(s2_idx)));
+      f0_p <= s0_f;
+      f1_p <= s1_f;
+      f2_p <= s2_f;
+      vv_p <= s0_v;
+
       if rst = '1' then
         st <= S_IDLE;
+        vv_p <= '0';
       else
         case st is
           when S_IDLE =>
