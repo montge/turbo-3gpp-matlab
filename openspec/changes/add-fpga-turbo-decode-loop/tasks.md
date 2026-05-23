@@ -6,9 +6,9 @@
 
 ## 2. Golden-Vector Generator
 
-- [ ] 2.1 Add `scripts/generate_hdl_turbo_decoder_vectors.m`: build realistic LLR frames, quantize, run the fixed-point full-loop reference, emit `hdl/vectors/turbo_decoder_top.csv` (`K`, `max_iter`, quantized `d_a` (`3×(K+4)`, column-major), expected `c` (`K` hard bits); optionally intermediate `c_a`/`c_e` for diagnostics).
-- [ ] 2.2 Suite: representative `K` set + a couple of SNRs + at least one small-`H` and the default-`H` case; keep **few** large-`K` cases (cycle budget `~4·H·K`). Document the CSV schema.
-- [ ] 2.3 Generators use only existing helpers (`turbo_encoder`, `internal_interleaver`, the P1 reference) + the new full-loop reference; no MATLAB/Octave sources changed.
+- [x] 2.1 Add `scripts/generate_hdl_turbo_decoder_vectors.m`: build realistic LLR frames, quantize, run the fixed-point full-loop reference, emit `hdl/vectors/turbo_decoder_top.csv` (`K`, `max_iter`, quantized `d_a` (`3×(K+4)`, column-major), expected `c` (`K` hard bits); optionally intermediate `c_a`/`c_e` for diagnostics).
+- [x] 2.2 Suite: representative `K` set + a couple of SNRs + at least one small-`H` and the default-`H` case; keep **few** large-`K` cases (cycle budget `~4·H·K`). Document the CSV schema.
+- [x] 2.3 Generators use only existing helpers (`turbo_encoder`, `internal_interleaver`, the P1 reference) + the new full-loop reference; no MATLAB/Octave sources changed.
 
 ## 3. Turbo Decode Loop Core (`turbo_decoder_top`)
 
