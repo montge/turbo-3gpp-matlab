@@ -224,6 +224,15 @@ architecture rtl of turbo_decoder_term_top is
   signal ca_mem : ext_mem_t;
   signal ce_mem : ext_mem_t;
 
+  -- Pre-loop hard decision c0 = (d_a_q(1:K) < 0) in COLUMN-MAJOR linear order
+  -- (the float-quirk oracle output on a pre-loop CRC pass). Captured in
+  -- S_PRECHK_FEED alongside the CRC feed; streamed by S_OUT when the pre-loop
+  -- check passes (preloop_pass='1'), because on a pre-loop pass the oracle
+  -- returns c = c0, NOT (c_a+c_e)<0 (which would read the un-run loop state).
+  type bit_mem_t is array (0 to K_MAX-1) of std_logic;
+  signal c0_mem        : bit_mem_t;
+  signal preloop_pass  : std_logic := '0';
+
   -- HARQ soft buffer: 3 rows x (K+4) cols on the W_HARQ grid.
   type harq_row_t is array (0 to K_MAX+3) of integer;
   type harq_buf_t is array (0 to 2) of harq_row_t;
@@ -387,6 +396,7 @@ begin
               tb_lat  <= is_tb;
               harq_on <= harq_en;
               lcol    <= 0;
+              preloop_pass <= '0';
               bsy     <= '1';
               st      <= S_LOAD_D;
             end if;
@@ -545,6 +555,9 @@ begin
               if acc < 0 then sgn_neg := '1'; else sgn_neg := '0'; end if;
               crc_bit      <= sgn_neg;
               crc_in_valid <= '1';
+              -- Capture the pre-loop hard decision bit (= the oracle's c0) so
+              -- S_OUT can stream it verbatim if the pre-loop CRC passes.
+              c0_mem(crc_feed_idx) <= sgn_neg;
               crc_feed_idx <= crc_feed_idx + 1;
             end if;
             if crc_done_s = '1' then
@@ -553,9 +566,10 @@ begin
 
           when S_PRECHK_WAIT =>
             if crc_ok_s = '1' then
-              iters_half <= 0;            -- pre-loop pass
-              out_idx    <= 0;
-              st         <= S_FINAL;
+              iters_half   <= 0;          -- pre-loop pass
+              preloop_pass <= '1';        -- S_OUT streams c0, not (c_a+c_e)<0
+              out_idx      <= 0;
+              st           <= S_FINAL;
             else
               st <= S_HALF_DISPATCH;
             end if;
@@ -741,8 +755,14 @@ begin
             st      <= S_OUT;
 
           when S_OUT =>
-            acc := sat_add(ca_mem(out_idx), ce_mem(out_idx), ACC_MIN, ACC_MAX);
-            if acc < 0 then cbit <= '1'; else cbit <= '0'; end if;
+            if preloop_pass = '1' then
+              -- Pre-loop CRC pass: the oracle returns c = c0 (the column-major
+              -- pre-loop hard decision), NOT (c_a+c_e)<0.
+              cbit <= c0_mem(out_idx);
+            else
+              acc := sat_add(ca_mem(out_idx), ce_mem(out_idx), ACC_MIN, ACC_MAX);
+              if acc < 0 then cbit <= '1'; else cbit <= '0'; end if;
+            end if;
             ov <= '1';
             if out_idx = Kr - 1 then
               ol <= '1';

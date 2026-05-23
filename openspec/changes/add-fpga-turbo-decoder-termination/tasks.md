@@ -24,22 +24,22 @@
 
 ## 4. Simulation Lane
 
-- [ ] 4.1 Add `hdl/sim/turbo_decoder_termination/` (Makefile + cocotb) mirroring established lanes; compile the P3 top + `crc24_check` + the reused `turbo_decoder_top`, `constituent_decoder`, `qpp_rom`, `qpp_interleaver`.
-- [ ] 4.2 Driver loads `K`/`max_iter`/CRC-select/`F_r`/HARQ-enable/`d_a` (and, for HARQ, a retransmission sequence), collects the `K` hard bits and `iterations_performed`; asserts **bit-exact** vs the extended fixed-point reference golden CSV — decoded bits AND `iterations_performed` (early-stop determinism).
-- [ ] 4.3 Artifacts covered by existing `.gitignore`.
+- [x] 4.1 Add `hdl/sim/turbo_decoder_termination/` (Makefile + cocotb) mirroring established lanes; compile the P3 top + `crc24_check` + the reused `turbo_decoder_top`, `constituent_decoder`, `qpp_rom`, `qpp_interleaver`. *Done as `hdl/sim/turbo_decoder_term_top/` (matches the DUT/CSV name). Makefile compiles `qpp_rom_pkg`+`qpp_rom`+`qpp_interleaver`+`constituent_decoder`+`crc24_check`+`turbo_decoder_term_top`; the P3 top is self-contained (does NOT instantiate the P2 `turbo_decoder_top`), so that core is not re-compiled here — it stays an independent green lane. `all_groups` per-MAX_ITERATIONS sweep mirrors the P2 lane.*
+- [x] 4.2 Driver loads `K`/`max_iter`/CRC-select/`F_r`/HARQ-enable/`d_a` (and, for HARQ, a retransmission sequence), collects the `K` hard bits and `iterations_performed`; asserts **bit-exact** vs the extended fixed-point reference golden CSV — decoded bits AND `iterations_performed` (early-stop determinism). *Done in `test_turbo_decoder_term_top.py`. crc_sel→(crc_en,is_tb) per the contract; HARQ replays the `n_retx` matrices with `harq_clear` on the first beat / `harq_last` on the final tx; filler positions (`c==2`) compared against the DUT's deterministic known-0; `iters_out` compared as `round(2·iterations_performed)`. Clear per-frame diff (case_id, K, index, expected/got) on any mismatch.*
+- [x] 4.3 Artifacts covered by existing `.gitignore`. *`sim_build/`, `results.xml`, `*.vcd`, `e~*.o`, `work-obj*.cf` are all covered by the root `.gitignore` (no per-lane file needed).*
 
 ## 5. Verification
 
-- [ ] 5.1 Inner gate: lane PASS bit-exact (decoded bits + `iterations_performed`) for all early-stop / filler / HARQ vectors, confirming early-termination determinism.
-- [ ] 5.2 Outer: bounded characterization vs float `turbo_decoder.m` / `turbo_decoding_chain.m` — BER-vs-SNR within the documented dB margin, early-stop `iterations_performed` distribution + CRC-pass rate tracked, HARQ BER improvement confirmed (recorded).
-- [ ] 5.3 Regression: all prior HDL lanes (incl. the P2 `turbo_decoder_top`, P1 `constituent_decoder`, `qpp_rom`, `qpp_interleaver`, `crc8_parallel`) + the Octave suite still pass; reused cores unmodified.
-- [ ] 5.4 Record results (vectors, `K`/SNR/`max_iter`/filler/HARQ set, BER + margin, early-stop distribution, CRC-pass rate, HARQ improvement).
+- [x] 5.1 Inner gate: lane PASS bit-exact (decoded bits + `iterations_performed`) for all early-stop / filler / HARQ vectors, confirming early-termination determinism. *PASS: all 10/10 frames bit-exact on BOTH the K hard bits AND `iters_out`. Special cases confirmed: `preloop0` iters=0 (pre-loop pass), `filler` K=64 F_r=8 iters=0.5, `harq` n_retx=4 iters=0.5, `runtomax`/`nocrc` iters=8, `earlystop`/`grid` mixed (1/0.5/1.5/1). One genuine RTL bug fixed (pre-loop-pass output path — see below).*
+- [x] 5.2 Outer: bounded characterization vs float `turbo_decoder.m` / `turbo_decoding_chain.m` — BER-vs-SNR within the documented dB margin, early-stop `iterations_performed` distribution + CRC-pass rate tracked, HARQ BER improvement confirmed (recorded). *Established in stage 1 (`scripts/characterize_turbo_decoder_term.m` → `results/characterize_turbo_decoder_term.txt`): BER within ≤1.0 dB band, early-stop distribution + CRC-pass rate, HARQ improvement. This lane enforces only the inner bit-exact tier and references those bands (README two-tier section); not re-derived here.*
+- [x] 5.3 Regression: all prior HDL lanes (incl. the P2 `turbo_decoder_top`, P1 `constituent_decoder`, `qpp_rom`, `qpp_interleaver`, `crc8_parallel`) + the Octave suite still pass; reused cores unmodified. *`scripts/run_all_hdl_lanes.sh`: 13/13 lanes PASS (incl. the new `turbo_decoder_term_top` and the UNCHANGED P2 `turbo_decoder_top`, P1 `constituent_decoder`, `qpp_rom`, `crc8`, etc.). Octave MOxUnit suite: OK (passed=102). Reused cores byte-unchanged (only `turbo_decoder_term_top.vhdl` edited; `crc24_check.vhdl` unchanged).*
+- [x] 5.4 Record results (vectors, `K`/SNR/`max_iter`/filler/HARQ set, BER + margin, early-stop distribution, CRC-pass rate, HARQ improvement). *Inner-gate results recorded in 5.1 + the lane README table (10 frames, K∈{40,64,512}, the early-stop/filler/HARQ set, the iters values). Outer BER/distribution/CRC-pass/HARQ-improvement recorded in the stage-1 `results/characterize_turbo_decoder_term.txt`.*
 
 ## 6. Validation and Docs
 
-- [ ] 6.1 Add `hdl/sim/turbo_decoder_termination/README.md` (two-tier method incl. the `iterations_performed` inner check + early-stop determinism, CRC24A/B selection, filler + HARQ semantics, CSV schema, regeneration, run, roadmap pointer).
-- [ ] 6.2 `npx openspec validate add-fpga-turbo-decoder-termination --strict` passes.
-- [ ] 6.3 `npx openspec validate --all --strict` — no regression.
+- [x] 6.1 Add `hdl/sim/turbo_decoder_termination/README.md` (two-tier method incl. the `iterations_performed` inner check + early-stop determinism, CRC24A/B selection, filler + HARQ semantics, CSV schema, regeneration, run, roadmap pointer). *Done as `hdl/sim/turbo_decoder_term_top/README.md`: two-tier method (inner bit-exact bits + iters, outer characterization band reference), the full P3 CSV schema, crc_sel/HARQ-replay/filler driving, the HARQ W_EXT-vs-W_HARQ grid-alignment note, the `iters_out = round(2·iters)` encoding, regen + run commands, roadmap pointer.*
+- [x] 6.2 `npx openspec validate add-fpga-turbo-decoder-termination --strict` passes. *PASS: "Change 'add-fpga-turbo-decoder-termination' is valid".*
+- [x] 6.3 `npx openspec validate --all --strict` — no regression. *PASS: 24 passed, 0 failed.*
 
 ## 7. Follow-on Note (not required for completion)
 
