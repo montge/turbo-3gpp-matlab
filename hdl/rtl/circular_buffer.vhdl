@@ -27,6 +27,14 @@ use ieee.numeric_std.all;
 -- The standard-defined behaviour (which w positions are read, in what order,
 -- skipping fillers) is unchanged.
 entity circular_buffer is
+  generic (
+    -- Max w-buffer depth K_w = 3*K_Pi. Defaults to the TS36.212 maximum
+    -- (3*6176 = 18528) so every existing instantiation/testbench is
+    -- byte-identical; board demos override it small (sized for their K_Pi) to
+    -- fit. All derived counter ranges (N_cb, k0, jj, pos, q_*, m_*) scale with
+    -- this generic, so shrinking it shrinks the whole core.
+    KW_MAX : integer := 3 * 6176                       -- 18528
+  );
   port (
     clk      : in  std_logic;
     rst      : in  std_logic;
@@ -47,8 +55,6 @@ entity circular_buffer is
 end entity circular_buffer;
 
 architecture rtl of circular_buffer is
-  constant KW_MAX : integer := 3 * 6176;             -- 18528
-
   type bit_arr is array (0 to KW_MAX-1) of std_logic;
   signal w_bit  : bit_arr := (others => '0');
   signal w_fill : bit_arr := (others => '0');

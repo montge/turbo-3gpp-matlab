@@ -55,14 +55,21 @@
 
 ## 4. Synthesis fit + timing closure (no board required)
 
-- [ ] 4.1 Compile the DE2 TX-demo project under Quartus II 13.0sp1 — Full
+- [x] 4.1 Compile the DE2 TX-demo project under Quartus II 13.0sp1 — Full
   Compilation, 0 errors, no unsupported-family / unconstrained-device errors.
-- [ ] 4.2 Record the fit: logic elements, M4K block count (expect ~12 of 105),
-  and DSP/multiplier count (expect 0).
-- [ ] 4.3 Confirm TimeQuest closes setup and hold for the 50 MHz `CLOCK_50`
-  domain (Fmax ≥ 50 MHz reported); no unconstrained-path warnings beyond the
-  intentionally false-pathed async I/O.
-- [ ] 4.4 Confirm `git status` after compile shows only intended sources (no
+  (Required two fixes: the `.qsf` defaulted to VHDL-1993 but the RTL is
+  VHDL-2008 — added `VHDL_INPUT_VERSION VHDL_2008`; and the K=6144-sized buffer
+  arrays were parameterized into generics and overridden small for the K=40
+  demo, see proposal/design.)
+- [x] 4.2 Record the fit: **3,007 logic elements / 33,216 (9 %)**, 1,127
+  registers, **M4K = 0 / 105** (the demo buffers are small enough — 64/64/256
+  deep — that Quartus maps them to LE register fabric, not M4K; M4K-inference is
+  the deferred follow-on), **DSP/multiplier = 0 / 70**, memory bits 0 / 483,840.
+- [x] 4.3 Confirm TimeQuest closes setup and hold for the 50 MHz `CLOCK_50`
+  domain (**setup slack +7.714 ns, hold slack +0.391 ns, Fmax 81.39 MHz ≥
+  50 MHz**); no unconstrained-path warnings beyond the intentionally
+  false-pathed async I/O.
+- [x] 4.4 Confirm `git status` after compile shows only intended sources (no
   `db/`, `output_files/`, `*.sof`, report artifacts) — `.gitignore` patterns
   cover the new project.
 

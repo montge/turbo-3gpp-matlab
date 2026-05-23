@@ -25,6 +25,15 @@ use ieee.numeric_std.all;
 -- into the circular buffer are byte-identical, only uniformly shifted by the
 -- one-cycle pipeline fill that this FSM hides.
 entity rate_matching_top is
+  generic (
+    -- Max input length D the three d-input buffers are sized for. Defaults to
+    -- the TS36.212 maximum (6148 = 6144+4) so existing instantiations are
+    -- byte-identical; board demos override it small (sized for their D).
+    DMAX   : integer := 6148;
+    -- Max circular-buffer depth K_w, threaded down to circular_buffer.
+    -- Defaults to the TS36.212 maximum (3*6176 = 18528).
+    KW_MAX : integer := 3 * 6176                       -- 18528
+  );
   port (
     clk      : in  std_logic;
     rst      : in  std_logic;
@@ -45,8 +54,6 @@ entity rate_matching_top is
 end entity rate_matching_top;
 
 architecture rtl of rate_matching_top is
-  constant DMAX : integer := 6148;
-
   component subblock_interleaver is
     generic ( W : integer := 13 );
     port (
@@ -60,6 +67,7 @@ architecture rtl of rate_matching_top is
   end component;
 
   component circular_buffer is
+    generic ( KW_MAX : integer := 3 * 6176 );
     port (
       clk : in std_logic; rst : in std_logic; start : in std_logic;
       k_pi_in : in std_logic_vector(13 downto 0);
@@ -129,6 +137,7 @@ begin
   v3b <= '0' when f2_p = '1' else rd3;
 
   i_cb : circular_buffer
+    generic map (KW_MAX => KW_MAX)
     port map (clk => clk, rst => rst, start => cb_start,
               k_pi_in => std_logic_vector(KPi),
               n_ref_in => n_ref_in, i_lbrm => i_lbrm,
