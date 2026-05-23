@@ -59,6 +59,11 @@ end entity tx_chain_de2_top;
 
 architecture rtl of tx_chain_de2_top is
   component tx_chain_top is
+    generic (
+      MAXK   : integer := 6144;
+      DMAX   : integer := 6148;
+      KW_MAX : integer := 3 * 6176
+    );
     port (
       clk        : in  std_logic;
       rst        : in  std_logic;
@@ -82,6 +87,30 @@ architecture rtl of tx_chain_de2_top is
       seg_o    : out std_logic_vector(6 downto 0)
     );
   end component;
+
+  ---------------------------------------------------------------------------
+  -- Demo buffer-depth overrides, sized for the K=40 golden vector. The
+  -- hardened cores default these generics to the TS36.212 maxima (MAXK=6144,
+  -- DMAX=6148, KW_MAX=18528), which for the EP2C35 inferred ~85k logic cells
+  -- (2.5x over the 33,216 available) because the buffers became flip-flops.
+  -- For the K=40 demo the required depths are tiny, so we override small:
+  --
+  --   K   = GV_K  = 40                      (code-block length)
+  --   D   = K + 4 = 44                      (turbo_encode_top output cols feed
+  --                                          rate_matching_top as D)
+  --   K_Pi = 32*ceil(D/32) = 32*ceil(44/32) = 32*2 = 64   (sub-block padded)
+  --   K_w  = 3*K_Pi = 192                   (circular-buffer w depth; the max
+  --                                          write index is K_Pi+2*(K_Pi-1)+1
+  --                                          = 3*K_Pi-1 = 191)
+  --
+  -- Round each up to a safe margin (still ~100x smaller than the 6144 maxima):
+  --   DEMO_MAXK   = 64  (>= 40)
+  --   DEMO_DMAX   = 64  (>= 44)
+  --   DEMO_KW_MAX = 256 (>= 192)
+  ---------------------------------------------------------------------------
+  constant DEMO_MAXK   : integer := 64;
+  constant DEMO_DMAX   : integer := 64;
+  constant DEMO_KW_MAX : integer := 256;
 
   -- Self-check FSM states.
   --   CH_RESET  : hold core in reset one cycle
@@ -136,6 +165,11 @@ begin
   -- Hardened TX-chain core, instantiated UNMODIFIED.
   ---------------------------------------------------------------------------
   u_core : tx_chain_top
+    generic map (
+      MAXK   => DEMO_MAXK,
+      DMAX   => DEMO_DMAX,
+      KW_MAX => DEMO_KW_MAX
+    )
     port map (
       clk        => CLOCK_50,
       rst        => core_rst,

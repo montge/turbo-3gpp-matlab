@@ -14,6 +14,7 @@ set_global_assignment -name DEVICE EP2C35F672C6
 set_global_assignment -name TOP_LEVEL_ENTITY tx_chain_de2_top
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION "13.0 SP1"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
 
 # --- Source files: hardened TX-chain RTL (unmodified) + shared decoder +
 #     board golden ROM + board wrapper. hex7seg is referenced, not copied. ---

@@ -35,6 +35,12 @@ use work.qpp_rom_pkg.all;
 --   * core auto-runs: ROM lookup -> interleave+encode -> emit
 --   * out_valid='1' streams the K+4 column triples; last='1' on column K+4
 entity turbo_encode_top is
+  generic (
+    -- Max code-block length K the input block buffer is sized for. Defaults to
+    -- the TS36.212 maximum (6144) so every existing instantiation/testbench is
+    -- byte-identical; board demos override it small (sized for their K) to fit.
+    MAXK : integer := 6144
+  );
   port (
     clk        : in  std_logic;
     rst        : in  std_logic;
@@ -52,8 +58,6 @@ entity turbo_encode_top is
 end entity turbo_encode_top;
 
 architecture rtl of turbo_encode_top is
-  constant MAXK : integer := 6144;
-
   component qpp_rom is
     port (
       clk : in std_logic; rst : in std_logic; start : in std_logic;

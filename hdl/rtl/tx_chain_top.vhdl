@@ -14,6 +14,15 @@ use work.qpp_rom_pkg.all;
 -- the UNMODIFIED rate_matching_top (D = K+4). Only the start-pulse FSM and
 -- pass-through are new.
 entity tx_chain_top is
+  generic (
+    -- Buffer-depth maxima, threaded down to turbo_encode_top (MAXK) and
+    -- rate_matching_top (DMAX, KW_MAX). All default to the TS36.212 maxima so
+    -- tx_chain_top with no overrides is byte-identical to before; board demos
+    -- override them small (sized for their K) so the design fits a small FPGA.
+    MAXK   : integer := 6144;
+    DMAX   : integer := 6148;
+    KW_MAX : integer := 3 * 6176                       -- 18528
+  );
   port (
     clk        : in  std_logic;
     rst        : in  std_logic;
@@ -33,6 +42,7 @@ end entity tx_chain_top;
 
 architecture rtl of tx_chain_top is
   component turbo_encode_top is
+    generic ( MAXK : integer := 6144 );
     port (
       clk : in std_logic; rst : in std_logic;
       in_start : in std_logic;
@@ -45,6 +55,7 @@ architecture rtl of tx_chain_top is
   end component;
 
   component rate_matching_top is
+    generic ( DMAX : integer := 6148; KW_MAX : integer := 3 * 6176 );
     port (
       clk : in std_logic; rst : in std_logic;
       in_start : in std_logic;
@@ -71,12 +82,14 @@ begin
   d_len_s <= std_logic_vector(resize(Kr + 4, 13));   -- D = K + 4
 
   i_te : turbo_encode_top
+    generic map (MAXK => MAXK)
     port map (clk => clk, rst => rst, in_start => te_start, k_in => k_in,
               c_in => c_in, c_in_valid => c_in_valid, busy => te_busy,
               d0_o => te_d0, d1_o => te_d1, d2_o => te_d2,
               out_valid => te_ov, last_o => te_lst);
 
   i_rm : rate_matching_top
+    generic map (DMAX => DMAX, KW_MAX => KW_MAX)
     port map (clk => clk, rst => rst, in_start => rm_start,
               d_len => d_len_s, n_ref_in => n_ref_in, i_lbrm => i_lbrm,
               rv_in => rv_in, e_in => e_in,
