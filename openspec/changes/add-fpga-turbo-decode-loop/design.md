@@ -197,47 +197,75 @@ shape consistent with both.)
   sentinel, and now one additional pinned exchange format mirrored identically
   in the reference.
 
-## Fixed-point format — to pin (post reference-authoring)
+## Fixed-point format — PINNED (post reference-authoring, task 1.2)
 
 P2 inherits the P1 constituent-core format unchanged (see
-`add-fpga-constituent-decoder` design.md). The **one** new quantity P2 pins is
-the extrinsic-exchange word format:
+`add-fpga-constituent-decoder` design.md: `W_in=9` Q4.4, `F_in=4`,
+`W_gamma=10`, `W_ab=15`, `W_delta=17`, `W_xe=18`, ±inf sentinel
+`MIN_SENT=−16384`/`MAX_SENT=+16383`, per-step max-norm, saturating). The **one**
+new quantity P2 pins is the extrinsic-exchange word format. These values are the
+pinned defaults in `scripts/fixedpoint_turbo_decoder.m` (`default_params`) and
+were confirmed against the outer BER margin (`scripts/characterize_turbo_decoder.m`):
 
 | Quantity | Format (signed) | Status |
 |---|---|---|
-| persistent LLR `z_a, z'_a, ch_sys` | inherit P1 input LLR format (Q4.4, `W_in=9`) | candidate; confirm in task 1.2 |
-| cyclic extrinsic `c_a, c_e` | extrinsic-exchange Q-format; ≥ `W_in`, sized so `c_a+ch_sys` and `x_e+ch_sys` adds do not saturate over the SNR sweep | **OPEN — pin in task 1.2** |
-| `x_a = c_a + ch_sys` (core input) | re-quantized to the P1 core input format `W_in=9` (saturating) before entering the core | candidate; confirm in task 1.2 |
+| fractional scale (whole exchange) | `F_in = 4` — **shared with the P1 core**, so the exchange↔core boundary is a pure width/saturate, no rescaling | **PINNED** |
+| persistent parity LLR `z_a, z'_a` + termination triplets | P1 core input format `W_in = 9` (Q4.4) — they are direct core inputs, quantized once | **PINNED** |
+| persistent systematic LLR `ch_sys` | extrinsic-exchange word `W_ext = 12` (Q7.4, range ~[−128,+128) at `F_in=4`) — it feeds the accumulator adds | **PINNED** |
+| cyclic extrinsic `c_a, c_e` | extrinsic-exchange word **`W_ext = 12`** (Q7.4) — 3 integer bits over `W_in`'s range; extrinsics accumulate confidence across `H=16` half-iterations and `W_in=9` (~[−16,+16)) would clip strong extrinsics and inject loss the float oracle lacks | **PINNED** |
+| combiner accumulator `c_a+ch_sys`, `x_e+ch_sys`, `c_a+c_e` | **`W_acc = 14`** (one bit over `W_ext` for the two-operand sum + margin), saturating to the `W_acc` range, then re-quantized (saturating) to `W_ext` for storage / to `W_in` for the core input | **PINNED** |
+| `x_a = c_a + ch_sys` (core input) | re-quantized (saturating) from the `W_acc` accumulator down to the P1 core input format **`W_in = 9`** before entering the core | **PINNED** |
 
-The exact extrinsic-exchange width and whether the `c`-words carry extra
-fractional/integer bits over `W_in` is the principal P2 fixed-point Open
-Question (below). Like P1, it is pinned once the reference is written and the
-outer BER margin is measured.
+`W_ext` and `W_acc` reuse P1's saturation philosophy: a single symmetric
+saturating magnitude per width, no wrap, no new ±inf token (P3's filler `+inf`
+will reuse the core's `MAX_SENT`). The widths are pinned ~1.5× above the worst
+observed need across the bounded SNR sweep — the same band discipline P1 used.
+**No widening beyond `W_in=9` was needed at the exchange *inputs***: the
+`W_in=9` parity/termination/core-input words are unchanged from P1; the only new
+width is the wider *stored/accumulator* path (`W_ext=12`, `W_acc=14`) that keeps
+the exchange itself from saturating.
+
+**Iteration default (PINNED):** `max_iterations = 8` ⇒ `H = round(2·8) = 16`
+half-iterations (even=upper/systematic, odd=lower/interleaved). No early
+termination (P3). A small-`H` case is reserved for the fast-regression vector
+suite (task 2.2).
+
+**LLR memory-word footprint (PINNED, from the reference's memory map):**
+persistent `z_a[K+3]`, `z'_a[K+3]`, `ch_sys[K]` + cyclic `c_a[K]`, `c_e[K]` =
+**`5·K + 6` LLR words** (`≈ 5·K`), plus the reused core's `8×(K+3)` α-RAM and
+the tiny `x_a[3]`/`x'_a[3]` termination consts. At `K=6144` that is `≈ 30,726`
+exchange LLR words (`W_ext=12` ⇒ ≈ 46 kB) + the core α-RAM — modest, GHDL-OK
+(cf. `circular_buffer w[18528]`). `pi` is regenerated per use (no `pi` RAM).
 
 ## Open Questions
 
-These are genuinely open and should be settled during implementation
-(task 1.2), not pre-decided here:
+Settled during task-1.2/1.3 implementation (CLOSED below); the one remaining
+item is an RTL-stage decision deferred to stage 3.
 
-- **`max_iterations` default.** A multiple of 0.5; common LTE practice is
-  ~6–8 iterations. The exact default `H` for the vector suite and the core's
-  reset/strap value is open (trade BER margin vs the `~4·H·K` cycle budget).
-  Proposed starting point: `max_iter = 8` (`H = 16`) with a small-`H` case in
-  the suite for fast regression.
-- **Extrinsic-exchange fixed-point width.** Whether `c_a`/`c_e` need extra
-  bits over the P1 `W_in=9` input format (and whether the `+ch_sys`/`+c_a`
-  sums need an intermediate wider accumulator before re-quantizing to the core
-  input). Pinned in task 1.2 against the outer BER margin, mirroring P1's
-  equivalence-band knob exercise.
-- **Memory width confirmation.** The `≈5·K` LLR-word estimate assumes the
-  persistent + cyclic words share the inherited LLR width; confirm exact word
-  widths and total RAM once the exchange format is pinned (still GHDL-modest).
-- **Shared vs duplicated α RAM.** v1 uses **one** constituent instance, so its
-  `8×(K+3)` α RAM is reused across upper and lower halves (re-filled each
-  half) — no duplication. This is the v1 decision; a second instance (with its
-  own α RAM) for pipelining is a deferred throughput option, flagged so it is
-  not silently assumed.
-- **Outer BER margin (dB) and bounded grid.** The exact SNR points, frame
-  counts, shallow target BER, and the documented dB margin vs float
-  `turbo_decoder.m` — pinned once measured (task 1.3), set ~1.5× above
-  worst-observed like P1.
+- **`max_iterations` default — CLOSED.** Pinned **`max_iter = 8`** ⇒
+  **`H = 16`** half-iterations (user-confirmed). A small-`H` case is reserved
+  for the fast-regression vector suite (task 2.2). No early termination (P3).
+- **Extrinsic-exchange fixed-point width — CLOSED.** Pinned
+  **`W_ext = 12`** (Q7.4) for stored `c_a`/`c_e`/`ch_sys` and **`W_acc = 14`**
+  for the combiner accumulator (`c_a+ch_sys`, `x_e+ch_sys`, `c_a+c_e`),
+  re-quantized (saturating) to `W_in = 9` for the core input. `F_in = 4` is
+  shared with the core (pure width/saturate boundary). The `W_in=9`
+  parity/termination/core-input words are **unchanged from P1** — no widening
+  there; only the stored/accumulator path is wider. See the "Fixed-point
+  format — PINNED" table. Confirmed within the outer BER margin.
+- **Memory width confirmation — CLOSED.** **`5·K + 6` LLR words** (`≈ 5·K`):
+  persistent `z_a[K+3]` + `z'_a[K+3]` + `ch_sys[K]`, cyclic `c_a[K]` + `c_e[K]`;
+  plus the reused core's `8×(K+3)` α-RAM and tiny `x_a[3]`/`x'_a[3]` consts.
+  GHDL-modest (see the PINNED footprint note above).
+- **Outer BER margin (dB) and bounded grid — CLOSED.** Bounded grid:
+  `K ∈ {40, 512}`, `SNR ∈ {−2.5,−2.0,−1.5,−1.0,−0.5} dB`, frames 120/`K=40`
+  and 10/`K=512` (~5k+ bits/cell), shallow target BER `1e-2`. Pinned band:
+  **fixed-point implementation loss ≤ 1.0 dB** (horizontal shift at the target
+  BER), set generously because the `W_in=9` core is intentionally not yet
+  width-tightened (that is M3). See `scripts/characterize_turbo_decoder.m`.
+- **Shared vs duplicated α RAM — DEFERRED (RTL stage 3).** v1 uses **one**
+  constituent instance, so its `8×(K+3)` α RAM is reused across upper and
+  lower halves (re-filled each half) — no duplication. This is the v1 seed
+  decision; a second instance (with its own α RAM) for pipelining is a deferred
+  throughput option, flagged so it is not silently assumed. Not settled by
+  stage 1 (which is reference + characterization only).
