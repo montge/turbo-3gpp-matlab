@@ -12,11 +12,11 @@
 
 ## 3. Turbo Decode Loop Core (`turbo_decoder_top`)
 
-- [ ] 3.1 Add `hdl/rtl/turbo_decoder_top.vhdl`: half-iteration loop controller / FSM (`S_IDLE→S_LOAD_D→S_HALF_DISPATCH→{upper|lower}→S_FINAL→S_OUT→S_DONE`), `H=round(2·max_iter)`, even=upper / odd=lower, stop at `H`.
-- [ ] 3.2 LLR memories: persistent `z_a[K+3]`, `z'_a[K+3]`, `ch_sys[K]` (set once at load) + cyclic `c_a[K]`, `c_e[K]` (per half) + termination consts `x_a[3]`/`x'_a[3]`; de-mux of `d_a` per the loop algebra; `c_a=0` init. K-agnostic (start latches `K`).
-- [ ] 3.3 Instantiate the **P1 `constituent_decoder` core unmodified**, one instance, sequential upper→lower; mux `(x_a,z_a)`/`(x'_a,z'_a)` in, consume `x_e[0..K-1]` (discard the 3 termination extrinsics). Upper: `x_a=c_a+ch_sys` (re-quantized), `c_e=x_e+ch_sys`.
-- [ ] 3.4 Interleave datapath: instantiate `qpp_rom` + `qpp_interleaver` **unmodified** (same pattern as `turbo_encode_top`); regenerate `pi[k]` per use; lower interleave read `x'_a=c_e[pi]` (async), deinterleave scatter `c_a[pi]=x'_e`.
-- [ ] 3.5 Final hard decision `c[k]=(c_a[k]+c_e[k])<0`; stream `K` bits out with valid/last.
+- [x] 3.1 Add `hdl/rtl/turbo_decoder_top.vhdl`: half-iteration loop controller / FSM (`S_IDLE→S_LOAD_D→S_HALF_DISPATCH→{upper|lower}→S_FINAL→S_OUT→S_DONE`), `H=round(2·max_iter)`, even=upper / odd=lower, stop at `H`.
+- [x] 3.2 LLR memories: persistent `z_a[K+3]`, `z'_a[K+3]`, `ch_sys[K]` (set once at load) + cyclic `c_a[K]`, `c_e[K]` (per half) + termination consts `x_a[3]`/`x'_a[3]`; de-mux of `d_a` per the loop algebra; `c_a=0` init. K-agnostic (start latches `K`).
+- [x] 3.3 Instantiate the **P1 `constituent_decoder` core unmodified**, one instance, sequential upper→lower; mux `(x_a,z_a)`/`(x'_a,z'_a)` in, consume `x_e[0..K-1]` (discard the 3 termination extrinsics). Upper: `x_a=c_a+ch_sys` (re-quantized), `c_e=x_e+ch_sys`.
+- [x] 3.4 Interleave datapath: instantiate `qpp_rom` + `qpp_interleaver` **unmodified** (same pattern as `turbo_encode_top`); regenerate `pi[k]` per use; lower interleave read `x'_a=c_e[pi]` (async), deinterleave scatter `c_a[pi]=x'_e`.
+- [x] 3.5 Final hard decision `c[k]=(c_a[k]+c_e[k])<0`; stream `K` bits out with valid/last.
 
 ## 4. Simulation Lane
 
