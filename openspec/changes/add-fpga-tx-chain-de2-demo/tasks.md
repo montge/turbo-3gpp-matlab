@@ -33,21 +33,21 @@
 
 ## 3. DE2 board demo — wrapper + on-chip golden ROM + self-check (crc8 pattern)
 
-- [ ] 3.1 Choose the demo `K` (default `K=40` from `hdl/vectors/tx_chain.csv`:
+- [x] 3.1 Choose the demo `K` (default `K=40` from `hdl/vectors/tx_chain.csv`:
   `N_ref=0, I_LBRM=0, rv=0, E=400`); record the exact `(K, N_ref, I_LBRM, rv,
   E, c, e)` row used.
-- [ ] 3.2 Add an on-chip golden-vector ROM under `hdl/boards/de2/` holding that
+- [x] 3.2 Add an on-chip golden-vector ROM under `hdl/boards/de2/` holding that
   row's `K`/params, the `K` input bits `c`, and the `E` expected output bits
   `e` as VHDL constants (board-presentation data, not under `hdl/rtl/`).
-- [ ] 3.3 Add a self-check FSM that pulses `in_start` with `K`/params, streams
+- [x] 3.3 Add a self-check FSM that pulses `in_start` with `K`/params, streams
   `c` into the core, captures each `out_valid` `e_bit`, compares to the expected
   `e` bit at the same index, and checks the `last` arrives at bit `E−1`;
   latches a sticky pass/fail.
-- [ ] 3.4 Add the DE2 board wrapper (`tx_chain_de2_top.vhdl`) instantiating the
+- [x] 3.4 Add the DE2 board wrapper (`tx_chain_de2_top.vhdl`) instantiating the
   hardened `tx_chain_top` **unmodified**, wiring `CLOCK_50` and a KEY start, and
   driving LED = pass / LED = fail / LED = running plus a 7-seg status code via
   the shared `hdl/boards/hex7seg.vhdl`.
-- [ ] 3.5 Add the Quartus project + constraints under `hdl/boards/de2/`: `.qpf`,
+- [x] 3.5 Add the Quartus project + constraints under `hdl/boards/de2/`: `.qpf`,
   `.qsf` (device `EP2C35F672C6`, reuse the verified crc8 SW/LEDR/HEX pins, add
   `CLOCK_50`=`PIN_N2` and the KEY pin, all source paths incl. the hardened RTL),
   and `.sdc` (`create_clock` 50 MHz on `CLOCK_50`, `derive_clock_uncertainty`,
