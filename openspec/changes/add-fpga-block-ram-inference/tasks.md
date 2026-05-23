@@ -57,20 +57,24 @@
 
 ## 3. `turbo_encode_top` `buf` → M4K-inferable (bit-exact)
 
-- [ ] 3.1 Split `buf` into two simple-dual-port copies (`bufN` read by `didx`,
-  `bufP` read by `pi_idx`) written identically, so each is a clean 1W/1R M4K
+- [x] 3.1 Split `buf` into two simple-dual-port copies (`buf_a` read by `didx`,
+  `buf_b` read by `pi_idx`) written identically, so each is a clean 1W/1R M4K
   (1W+2R cannot share one M4K); reads already registered into
-  `cbit_r`/`cpbit_r` (~lines 173–174).
-- [ ] 3.2 Lift both copies' writes out of the `if rst … else case st … when
-  S_LOAD` body (~lines 176–195) into a top-level memory process; FSM drives only
-  write-addr (`widx`) / we / data and the read addresses; keep the
-  `S_ENC_PRIME` prefetch beat. Add `ramstyle = "M4K"`.
-- [ ] 3.3 **Inner gate:** re-run `turbo_encode_top` (and `tx_chain_top`)
-  cocotb/GHDL lanes — MUST stay bit-for-bit with `hdl/vectors/turbo_encoder.csv`
-  and `tx_chain.csv` byte-identical.
-- [ ] 3.4 **Outer gate (per-memory):** synthesize `turbo_encode_top` at full
-  `MAXK=6144`; confirm both `buf` copies infer M4K (`memory bits > 0`,
-  expectation ~2 M4K). Record the count.
+  `cbit_r`/`cpbit_r`.
+- [x] 3.2 Lift both copies' writes out of the `if rst … else case st … when
+  S_LOAD` body into a top-level (unconditional) memory process; FSM drives only
+  write-addr (`widx`) / we (`buf_we`) / data (`buf_wd`) and the read addresses;
+  kept the `S_ENC_PRIME` prefetch beat. Added `ramstyle = "M4K"`.
+- [x] 3.3 **Inner gate:** re-ran `turbo_encode_top` (and `tx_chain_top`)
+  cocotb/GHDL lanes — PASS bit-for-bit; `hdl/vectors/turbo_encoder.csv` and
+  `tx_chain.csv` byte-identical (`git status` clean for vectors); full suite
+  14/14 lanes PASS.
+- [x] 3.4 **Outer gate (per-memory):** synthesized `turbo_encode_top` at full
+  `MAXK=6144` (Quartus II 13.0sp1, EP2C35F672C6). Both copies infer altsyncram
+  simple-dual-port M4K. Before: `Total memory bits 0`, 15,619 LE, Fmax 71.51 MHz.
+  After: `Total memory bits 16,384`, **4 M4K** (2 per copy), 744 LE, Fmax
+  117.38 MHz (setup +15.575 ns / hold +0.215 ns — 50 MHz closes). Dual-copy
+  doubled M4K (2→4) as expected; trivial vs 105 available.
 
 ## 4. Full-`K` `tx_chain_top` fit + timing (the synthesis oracle)
 
