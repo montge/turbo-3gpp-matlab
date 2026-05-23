@@ -39,4 +39,4 @@
 
 ## 7. Follow-on Note (not required for completion)
 
-- [ ] 7.1 Confirm roadmap §3 P3+ (`add-fpga-turbo-decoder-termination`: CRC-aided early termination, HARQ accumulation, filler `NaN→+inf`; and the maturation track: exact Log-MAP LUT + extrinsic scaling M1, sliding-window/BRAM M2, fixed-point width tightening M3, RX integration P4, board demo M4) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
+- [x] 7.1 Confirm roadmap §3 P3+ (`add-fpga-turbo-decoder-termination`: CRC-aided early termination, HARQ accumulation, filler `NaN→+inf`; and the maturation track: exact Log-MAP LUT + extrinsic scaling M1, sliding-window/BRAM M2, fixed-point width tightening M3, RX integration P4, board demo M4) remain captured in `hdl/docs/decoder_roadmap.md` as the explicit next increments; out of scope here.
