@@ -10,7 +10,7 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 1. Fixed-point de-rate-match reference + characterization
 
-- [ ] 1.1 Author `scripts/fixedpoint_de_rate_matching.m` — factor the inline
+- [x] 1.1 Author `scripts/fixedpoint_de_rate_matching.m` — factor the inline
   float de-rate-match (`turbo_decoding_chain.m` lines 86–93: scatter-accumulate
   via `rate_matching_patterns`, reshape `3×D`, `d(1:2,1:F_r)=NaN`) into a callable
   fixed-point reference: quantize received LLRs to W_LLR (Q3.4), inverse
@@ -18,12 +18,12 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
   accumulator, inverse subblock-interleave (×3), map filler `d_a(1:2,1:F_r)` →
   `+inf` = P1 `MAX_SENT`, untransmitted positions → `0` erasure, saturate output
   to W_EXT (Q7.4). Output the `3×(K+4)` `d_a` matrix in the decoder's load format.
-- [ ] 1.2 Pin the **soft-combine accumulator width** `W_DRM = 16` (Q11.4) and the
+- [x] 1.2 Pin the **soft-combine accumulator width** `W_DRM = 16` (Q11.4) and the
   **input LLR format** `W_LLR = 8` (Q3.4) against the design.md Fixed-point table;
   reuse the P1 `MAX_SENT = +16383` filler sentinel and the W_EXT = 12 output word
   UNCHANGED (no new decode-datapath format). Verify the saturating accumulate
   never wraps for the worst-case visit/wrap count (design.md sizing).
-- [ ] 1.3 Characterize the reference vs the **inline float de-rate-match** on
+- [x] 1.3 Characterize the reference vs the **inline float de-rate-match** on
   identical inputs: the permutation/accumulate is integer-exact; assert the
   recovered `d_a` matches the float `d` (finite values exact modulo W_LLR/W_DRM
   quantization; `+inf` filler and `0` erasure at the float positions) across a

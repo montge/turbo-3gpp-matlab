@@ -159,6 +159,45 @@ the channel LLRs to Q3.4 before the RX chain. The reference and golden vectors
 pin it; the BER harness uses the same quantization so the inner CSV and the outer
 BER use the same channel-LLR grid.
 
+**Stage-1 characterization (CONFIRMED — `scripts/fixedpoint_de_rate_matching.m` +
+`scripts/characterize_de_rate_matching.m`).** The fixed-point reference was
+authored and characterized against the **inline float de-rate-match**
+(`turbo_decoding_chain.m` lines 86–93, replicated in the harness on the
+**identical** quantized LLR vector `e_q`; the source file is UNMODIFIED) over a
+five-case grid covering the new behaviours: a no-wrap baseline (`E ≈ N_cb`,
+max-hit 1), a forced **wrap** (`E = 400 > N_cb = 132`, a `w` position
+genuinely soft-combines **max-hit 4** LLRs), an **erasure** case
+(`E = 72 < N_cb`, untransmitted positions → `0`), a **filler** case
+(`A = 20 → K_r = 48, F_r = 4`; rows 1:2 of the first 4 columns → `+inf`), and an
+`rv_idx = 2` case (different `k_0`, max-hit 2). Result, every case:
+
+| metric | result | band |
+|---|---|---|
+| finite-position **max-abs LLR error** | **0.0000** | ≤ 0.2500 (4 W_EXT LSBs) |
+| finite-position **RMS LLR error** | **0.0000** | — |
+| **sign agreement** | **100.000 %** | = 100 % |
+| **filler** (`+inf`) positions | **exact** | integer-exact |
+| **erasure** (`0`) positions | **exact** | integer-exact |
+
+The agreement is **exact** (zero error), because both paths consume the same
+W_LLR-quantized `e_q` and the soft-combine accumulate stays well inside the
+`W_DRM`/`W_EXT` range at this grid — the saturating add never triggers, so the
+integer scatter-accumulate is bit-exact and the only quantization (the shared
+`W_LLR` input round) is common to both. This is the de-rate-match-alone
+equivalence; the recorded report is `results/characterize_de_rate_matching.txt`.
+
+**`W_LLR = 8` (Q3.4) confirmed, NOT tightened.** A separate dynamic-range probe
+of the channel LLRs `L = 2y/σ²` over the waterfall shows mean `|L|` ≈ 1.7–4.2 and
+a clipped tail at the Q3.4 boundary (`±7.94`) of ≈ 0 % at −2…0 dB, ≈ 0.5 % at
+1 dB, rising to ≈ 9 % at 3 dB. This tail clipping lives entirely in the **shared
+demapper-grid input quantization**, NOT in the de-rate-match arithmetic (which
+adds zero error of its own — it is information-preserving by construction), so it
+does not affect the stage-1 equivalence gate. `W_LLR = 8` stands as the v1 input
+contract; whether to widen the demapper grid (more integer bits) is properly a
+question for the **end-to-end BER** stage (stage 5 / §4 outer tier), where the
+demapper-grid loss is measured against BER, not here. The realistic ~6-bit
+channel format the roadmap M3 targets remains a tightening follow-on.
+
 ### 4. Two-tier oracle + end-to-end BER (the P4 verification)
 
 **Inner (bit-exact, every commit — the established discipline).** The
@@ -284,11 +323,16 @@ decoder's `~4·H·K`. Sim-first storage (soft `w` RAM banked sys/ev/od as in
   plain.** v1 feeds the plain P2 decoder (fixed `H`, no CRC). For `C = 1` the
   TB CRC (CRC24A) early-stop would use `turbo_decoder_term_top`; it is a drop-in
   swap once the soft de-rate-match is proven, flagged as the immediate follow-on.
-- **W_LLR channel-LLR input format — RECOMMEND Q3.4 (W_LLR = 8).** This is the
-  RX input contract (the demapper grid). Pinned in §3; confirm against the BER
-  harness's actual channel-LLR dynamic range during reference characterization
-  (the reference + harness use the same quantization). The realistic ~6-bit
-  channel format the roadmap M3 targets is a tightening follow-on, not v1.
+- **W_LLR channel-LLR input format — CONFIRMED Q3.4 (W_LLR = 8) for v1
+  (CLOSED for stage 1).** This is the RX input contract (the demapper grid),
+  pinned in §3. The stage-1 characterization (§3 table) confirms it: the
+  de-rate-match equivalence is exact on the W_LLR-quantized LLRs, and the
+  channel-LLR dynamic-range probe (mean `|L|` ≈ 1.7–4.2; Q3.4-boundary clip
+  ≈ 0–9 % across −2…3 dB) shows the only Q3.4 loss is in the shared demapper-grid
+  quantization, not the de-rate-match (which is information-preserving). NOT
+  tightened for v1. Whether to widen the demapper grid is deferred to the
+  end-to-end BER stage (§4 outer tier), where the demapper loss is measured
+  against BER; the realistic ~6-bit M3 channel format remains a follow-on.
 - **Multi-CB (`C > 1`) desegmentation — DEFERRED, flagged.** `code_block_deconcatenation`
   (RX-side split of G LLRs into per-block `E_r`) + `code_block_desegmentation`
   (concatenate decoded bits, strip CRC24B, drop filler). For `C = 1` it is a
