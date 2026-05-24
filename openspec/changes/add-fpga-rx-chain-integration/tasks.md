@@ -33,13 +33,13 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 2. Golden-vector generator
 
-- [ ] 2.1 Author `scripts/generate_hdl_de_rate_matching_vectors.m` →
+- [x] 2.1 Author `scripts/generate_hdl_de_rate_matching_vectors.m` →
   `hdl/vectors/de_rate_matching_top.csv`: per case `case_id`, `K`, `N_ref`,
   `I_LBRM`, `rv_idx`, `E`, `F_r`, the E quantized received LLRs `e_soft`, and the
   expected `3×(K+4)` `d_a` matrix (W_EXT). Document the CSV schema in the header;
   idempotent (fixed per-case seeds → byte-identical across runs); few large-`K`
   cases (sized for the linear de-rate-match latency).
-- [ ] 2.2 Vectors EXERCISE the new behaviours: (a) a baseline `E ≈ N_cb` no-wrap
+- [x] 2.2 Vectors EXERCISE the new behaviours: (a) a baseline `E ≈ N_cb` no-wrap
   case; (b) an **`E > N_cb` wrap** case (a `w` position accumulates ≥2 LLRs —
   soft-combine); (c) an `E < N_cb` **erasure** case (untransmitted `w` positions
   → `0`); (d) at least one **filler** case `F_r > 0` (first `F_r` systematic +
@@ -50,29 +50,29 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 3. RTL: `de_rate_matching_top` + `rx_chain_top`
 
-- [ ] 3.1 Add `hdl/rtl/de_rate_matching_top.vhdl`: inverse circular-buffer
+- [x] 3.1 Add `hdl/rtl/de_rate_matching_top.vhdl`: inverse circular-buffer
   **soft-combine** (mirror the `circular_buffer.vhdl` `k_0`/`N_cb`/dummy-skip
   divider-free recurrence `S_QCALC`/`S_K0MOD`/running `pos`, with a saturating
   read-modify-write `w_soft[pos] += e_soft[k]` into a banked soft `w` RAM
   sys/ev/od) — author as a standalone `de_circular_buffer` sibling or a mode flag
   (design.md open question; recommend standalone, leaving the TX
   `circular_buffer` UNTOUCHED).
-- [ ] 3.2 Inverse subblock-interleave (×3): split soft `w` into the 3 sub-blocks
+- [x] 3.2 Inverse subblock-interleave (×3): split soft `w` into the 3 sub-blocks
   (sys/ev/od bank read), reuse the **UNMODIFIED `subblock_interleaver`** address+
   filler generator, and **scatter** `d_soft[d-index] = subblock_soft[pos]` for
   non-filler positions; drop the subblock pad positions.
-- [ ] 3.3 Filler / erasure / output: map `d_a(1:2, 1:F_r)` → `MAX_SENT` (`+inf`),
+- [x] 3.3 Filler / erasure / output: map `d_a(1:2, 1:F_r)` → `MAX_SENT` (`+inf`),
   leave untransmitted positions `0`, **saturate** every `d_a` word W_DRM → W_EXT,
   and stream the `3×(K+4)` matrix column-major (`da_valid`/`da{1,2,3}` W_EXT) in
   the decoder's exact load order.
-- [ ] 3.4 Add `hdl/rtl/rx_chain_top.vhdl`: wire `de_rate_matching_top` →
+- [x] 3.4 Add `hdl/rtl/rx_chain_top.vhdl`: wire `de_rate_matching_top` →
   **`turbo_decoder_top` (UNMODIFIED)** with a start-pulse FSM, mirroring
   `tx_chain_top` in reverse; expose K decoded hard bits with valid/last.
   K-agnostic (start latches `K`, `N_ref`, `I_LBRM`, `rv_idx`, `E`, `F_r`).
 
 ## 4. Inner simulation lane (bit-exact)
 
-- [ ] 4.1 Add `hdl/sim/de_rate_matching_top/` (Makefile + cocotb) mirroring the
+- [x] 4.1 Add `hdl/sim/de_rate_matching_top/` (Makefile + cocotb) mirroring the
   established lanes; compile `de_rate_matching_top` + `subblock_interleaver`
   (+ the `de_circular_buffer` sibling). Driver loads `K`/`N_ref`/`I_LBRM`/`rv`/`E`/
   `F_r`/`e_soft`, collects the `3×(K+4)` `d_a`, asserts **bit-exact** vs the golden
@@ -81,29 +81,29 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 5. End-to-end verify (TX → AWGN → RX)
 
-- [ ] 5.1 Add `hdl/sim/rx_chain_top/` (Makefile + cocotb): compile `rx_chain_top`
+- [x] 5.1 Add `hdl/sim/rx_chain_top/` (Makefile + cocotb): compile `rx_chain_top`
   + `de_rate_matching_top` + `subblock_interleaver` + the reused (UNMODIFIED)
   `turbo_decoder_top`, `constituent_decoder`, `qpp_rom`, `qpp_interleaver`. A
   couple of end-to-end smoke frames (TX golden frame → AWGN-quantized LLRs → RX),
   hard-decoded K bits checked.
-- [ ] 5.2 Add `scripts/characterize_rx_chain.m` — bounded end-to-end **BER**
+- [x] 5.2 Add `scripts/characterize_rx_chain.m` — bounded end-to-end **BER**
   harness: random block → `turbo_encoder` → `rate_matching` → BPSK+AWGN →
   quantize to W_LLR → RX chain (fixed-point de-rate-match → fixed-point turbo
   decode) → compare decoded bits / BER-vs-SNR against float `turbo_decoding_chain`
   on the **same** frames over a bounded SNR grid (few points, modest frames,
   shallow target BER); assert within the documented decoder dB margin (≤ ~1.0 dB).
   Record in `results/characterize_rx_chain.txt`.
-- [ ] 5.3 Regression: all prior HDL lanes (TX lanes + P1/P2/P3 decoder lanes +
+- [x] 5.3 Regression: all prior HDL lanes (TX lanes + P1/P2/P3 decoder lanes +
   CRC) and the Octave suite still pass; reused cores (`turbo_decoder_top`,
   `subblock_interleaver`, the TX `circular_buffer`) byte-unchanged.
 
 ## 6. Fit + docs + validate
 
-- [ ] 6.1 Quartus II 13.0sp1 fit of `rx_chain_top` on the EP2C35F672C6 at a
+- [x] 6.1 Quartus II 13.0sp1 fit of `rx_chain_top` on the EP2C35F672C6 at a
   board-demo `K` (e.g. K = 512, sized generics) — record LE / M4K / registers /
   DSP / Fmax; the soft `w` RAM infers M4K (sys/ev/od banks, like the TX
   `circular_buffer`).
-- [ ] 6.2 Add `hdl/sim/de_rate_matching_top/README.md` (+ `rx_chain_top/README.md`):
+- [x] 6.2 Add `hdl/sim/de_rate_matching_top/README.md` (+ `rx_chain_top/README.md`):
   two-tier + end-to-end method, the de-rate-match-as-inverse algebra, the CSV
   schema, W_LLR/W_DRM/W_EXT pins, regenerate + run commands, roadmap pointer; note
   the deferred multi-CB / CRC-term / HARQ follow-ons.
