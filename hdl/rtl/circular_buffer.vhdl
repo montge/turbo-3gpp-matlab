@@ -59,6 +59,21 @@ use ieee.numeric_std.all;
 --   + rate-match M4K fixes): 22/105 M4K, 90,112 memory bits, 1,716/33,216 LE,
 --   605 registers, Fmax 89.33 MHz on CLOCK_50 -- the whole chain fits the
 --   EP2C35 via block RAM (was ~85k LE as logic = did not fit).
+--
+-- Multiplier-free index arithmetic (add-fpga-circular-buffer-mult-free):
+--   At full KW_MAX the start offset k_0 = R_TC*(2*q*rv + 2) inferred 2 embedded
+--   9-bit multipliers (the inner q_cnt*RvR and the outer R_TC*(...)). Rewritten
+--   bit-exactly as k_0 = (2*R_TC*rv)*q + 2*R_TC: the q*rv*2*R_TC term is built by
+--   a parallel running accumulator k0_acc that adds the block constant
+--   k0_inc = 2*R_TC*rv on the SAME S_QCALC steps that count q (so after the loop
+--   k0_acc = 2*R_TC*rv*q by repeated addition, no q*rv product), and the +2*R_TC
+--   term is a single add of two_rtc = 2*R_TC. The block constants are formed with
+--   shifts/adds and a 4-way rv select (0, 2*R_TC, 4*R_TC, 6*R_TC) -- no
+--   variable*variable multiply. No new FSM states, off the read-latency path.
+--   Result: synthesizes with DSP = 0 (was 2) at full KW_MAX while the M4K
+--   inference (12 segments / 49,152 bits) and 50 MHz timing are retained;
+--   bit-exactness preserved (the circular_buffer cocotb lane stays green vs the
+--   unchanged golden vectors).
 entity circular_buffer is
   generic (
     -- Max w-buffer depth K_w = 3*K_Pi. Defaults to the TS36.212 maximum
@@ -157,6 +172,16 @@ architecture rtl of circular_buffer is
   signal q_step : integer range 0 to KW_MAX := 0;    -- 8*R_TC (= K_Pi/4)
   signal q_acc  : integer range 0 to 2*KW_MAX := 0;
   signal q_cnt  : integer range 0 to KW_MAX := 0;
+
+  -- Multiplier-free start offset k_0 = R_TC*(2*q*rv + 2) = (2*R_TC*rv)*q + 2*R_TC.
+  -- Instead of the two variable*variable products (q*rv and R_TC*(...)) that
+  -- inferred 2 embedded 9-bit multipliers, we accumulate the q*rv*2*R_TC term by
+  -- repeated addition of the block constant k0_inc = 2*R_TC*rv over the SAME
+  -- S_QCALC loop that already counts q, and add the constant 2*R_TC term once at
+  -- the end -- all add/shift/mux, no DSP. Sized off the existing k0 range.
+  signal two_rtc : integer range 0 to 8*KW_MAX := 0;  -- 2*R_TC (R_TC sll 1)
+  signal k0_inc  : integer range 0 to 8*KW_MAX := 0;  -- 2*R_TC*rv (shift/mux)
+  signal k0_acc  : integer range 0 to 8*KW_MAX := 0;  -- running 2*R_TC*rv*q
 
   -- Divider-free k_0 mod N_cb (shift/compare-subtract) state.
   signal m_rem  : integer range 0 to 8*KW_MAX := 0;  -- running remainder
@@ -282,6 +307,17 @@ begin
                 q_step <= 8 * rtc;           -- = K_Pi/4
                 q_acc  <= 0;
                 q_cnt  <= 0;
+                -- Latch the multiplier-free k_0 block constants (shift/add/mux,
+                -- no DSP): two_rtc = 2*R_TC, and k0_inc = 2*R_TC*rv via a 4-way
+                -- select over shifted R_TC (rv in {0,1,2,3}). Seed k0_acc = 0.
+                two_rtc <= rtc * 2;          -- 2*R_TC (R_TC sll 1)
+                case RvR is
+                  when 1      => k0_inc <= rtc * 2;            -- 2*R_TC
+                  when 2      => k0_inc <= rtc * 4;            -- 4*R_TC (R_TC sll 2)
+                  when 3      => k0_inc <= rtc * 4 + rtc * 2;  -- 6*R_TC
+                  when others => k0_inc <= 0;                  -- rv = 0
+                end case;
+                k0_acc <= 0;
                 st     <= S_QCALC;
               else
                 cidx <= cidx + 1;
@@ -294,14 +330,18 @@ begin
           -- (ncb+step-1)/step. Runs once per block (latency irrelevant).
           when S_QCALC =>
             if q_acc >= N_cb then
-              -- q = q_cnt. k0 = R_TC*(2*q*rv + 2). Seed the k0-mod recurrence.
-              k0    <= R_TC * (2*q_cnt*RvR + 2);
-              m_rem <= R_TC * (2*q_cnt*RvR + 2);
+              -- q = q_cnt. k0 = R_TC*(2*q*rv + 2) = (2*R_TC*rv)*q + 2*R_TC.
+              -- k0_acc holds 2*R_TC*rv*q (q repeated adds of k0_inc, accumulated
+              -- alongside q_cnt below); add the 2*R_TC term as a pure add -- no
+              -- runtime products. Seed the k0-mod recurrence with the same value.
+              k0    <= k0_acc + two_rtc;
+              m_rem <= k0_acc + two_rtc;
               m_sub <= N_cb;
               st    <= S_K0MOD;
             else
-              q_acc <= q_acc + q_step;
-              q_cnt <= q_cnt + 1;
+              q_acc  <= q_acc + q_step;
+              q_cnt  <= q_cnt + 1;
+              k0_acc <= k0_acc + k0_inc;   -- parallel: 2*R_TC*rv per q step
             end if;
 
           -- Divider-free pos0 = k_0 mod N_cb via shift/compare-subtract:
