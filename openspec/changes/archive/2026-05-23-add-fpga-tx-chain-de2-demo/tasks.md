@@ -75,24 +75,45 @@
 
 ## 5. On-board program-and-observe (hardware-gated)
 
-- [ ] 5.1 Program the DE2 (`quartus_pgm -c USB-Blaster -m jtag -o
+> **On-board PASS — 2026-05-23.** The DE2 (Cyclone II `EP2C35F672C6`) was
+> programmed over USB-Blaster JTAG and the on-chip self-check passed on real
+> silicon. See "On-board result" at the bottom of this file.
+
+- [x] 5.1 Program the DE2 (`quartus_pgm -c USB-Blaster -m jtag -o
   "p;output_files/tx_chain_de2.sof"`, 13.0sp1) — configuration succeeds.
-- [ ] 5.2 Trigger the self-check; confirm the **pass** LED lights and the 7-seg
+  (2026-05-23: "Configuration succeeded -- 1 device(s) configured, 0 errors".)
+- [x] 5.2 Trigger the self-check; confirm the **pass** LED lights and the 7-seg
   shows the pass code — i.e. the on-board hardened `tx_chain_top` reproduces the
   committed `tx_chain` golden vector for the chosen `K` bit-for-bit. Record the
   board, cable, device JTAG ID, and the observed pass/fail.
+  (2026-05-23: **HEX = A5 + LEDG[0] green = PASS** on the K=40 vector.)
 
 ## 6. Documentation + validation
 
-- [ ] 6.1 Add an `hdl/boards/de2/` README section (or sibling README) for the TX
+- [x] 6.1 Add an `hdl/boards/de2/` README section (or sibling README) for the TX
   demo: the chosen `K`/vector row, build command, program command, what the
   LEDs/7-seg mean, and how to read pass/fail — repeatable per the crc8 pattern.
-- [ ] 6.2 Note in the relevant RTL headers that the divider-free / sync-read
+  (`hdl/boards/de2/tx_chain_de2_README.md`, with the on-board PASS now recorded.)
+- [x] 6.2 Note in the relevant RTL headers that the divider-free / sync-read
   hardening landed (the `circular_buffer` header follow-on is now done) and that
   bit-exactness is preserved (cocotb gate green, vectors unchanged).
-- [ ] 6.3 Run `npx openspec validate add-fpga-tx-chain-de2-demo --strict` and
+  (Headers of `circular_buffer.vhdl`, `rate_matching_top.vhdl`,
+  `turbo_encode_top.vhdl` all document the hardening + bit-exactness.)
+- [x] 6.3 Run `npx openspec validate add-fpga-tx-chain-de2-demo --strict` and
   `npx openspec validate --all --strict` — both pass, no regression.
-- [ ] 6.4 Re-run the full HDL cocotb suite (`circular_buffer`,
+- [x] 6.4 Re-run the full HDL cocotb suite (`circular_buffer`,
   `rate_matching_top`, `turbo_encode_top`, `tx_chain_top` at minimum) and the
   Octave software suite — confirm no sim/software regression and all golden
-  vectors unchanged.
+  vectors unchanged. (14/14 cocotb/GHDL lanes PASS, golden vectors byte-identical.)
+
+## On-board result (2026-05-23)
+
+The synthesis-hardened TX chain was validated on real hardware:
+
+- **Board:** Terasic DE2, Cyclone II `EP2C35F672C6`.
+- **Program command:** `quartus_pgm -c USB-Blaster -m jtag -o
+  "p;output_files/tx_chain_de2.sof"` (Quartus II 13.0sp1) →
+  "Configuration succeeded -- 1 device(s) configured, 0 errors".
+- **Self-check verdict:** **HEX = A5** and **LEDG[0] green = PASS** — the on-chip
+  hardened `tx_chain_top` reproduced the committed `tx_chain` golden vector
+  (K=40, N_ref=0, I_LBRM=0, rv=0, E=400) bit-for-bit on silicon.

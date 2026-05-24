@@ -7,10 +7,10 @@ a committed golden vector. The core is instantiated **unmodified**; this
 directory adds only the board wrapper, an on-chip golden ROM, a self-check FSM,
 the Quartus project, and constraints.
 
-This is **stage 3** of `add-fpga-tx-chain-de2-demo`: the synthesizable wrapper
-+ a GHDL self-check that is sim-clean and ready to open in Quartus. Stage 4
-(Quartus fit + TimeQuest closure) and stage 5 (on-board program + observe) are
-the next steps and need the toolchain / physical board.
+All stages of `add-fpga-tx-chain-de2-demo` are complete: the synthesizable
+wrapper + GHDL self-check (stage 3), the Quartus fit + TimeQuest closure
+(stage 4), and the on-board program + observe (stage 5) — which **passed on a
+real DE2 on 2026-05-23** (see "On-board result" below).
 
 ## Target and toolchain
 
@@ -135,10 +135,19 @@ RTL.
 ## Program (stage 5 — requires the physical board)
 
 ```bash
-C:\altera\13.0sp1\quartus\bin64\quartus_pgm -m jtag -o "p;output_files/tx_chain_de2.sof"
+C:\altera\13.0sp1\quartus\bin64\quartus_pgm -c USB-Blaster -m jtag -o "p;output_files/tx_chain_de2.sof"
 ```
 
 Then watch `LEDG[0]` (PASS) light and `HEX1 HEX0` show `A5`.
+
+### On-board result — PASS (2026-05-23)
+
+Run on real hardware: the DE2 (Cyclone II `EP2C35F672C6`) was programmed over
+USB-Blaster JTAG with the above command — *"Configuration succeeded -- 1
+device(s) configured, 0 errors"* — and the on-chip self-check reported
+**HEX = A5 with LEDG[0] green = PASS**. The on-board hardened `tx_chain_top`
+therefore reproduced the committed `tx_chain` golden vector (K=40, N_ref=0,
+I_LBRM=0, rv=0, E=400) bit-for-bit on silicon.
 
 ## GHDL self-check (sim gate — no Quartus needed)
 
