@@ -139,6 +139,16 @@ Then press `KEY[0]` (or just observe the power-up free-run) and watch
 expected 512 hard bits bit-for-bit on silicon. A red `LEDR[0]` / `FF` means a
 mismatch. Cross-check the pinout against the DE2 user manual first.
 
+### On-board result — PASS (2026-05-24)
+
+Run on real hardware: the DE2 (Cyclone II `EP2C35F672C6`) was programmed over
+USB-Blaster JTAG with the above command — *"Configuration succeeded -- 1
+device(s) configured, 0 errors"* — and the on-chip self-check reported
+**HEX = A5 with LEDG[0] green (LEDR[0] off, LEDR[1] done on) = PASS**. The
+on-board `turbo_decoder_top` therefore decoded the committed K=512 channel-LLR
+golden vector (K=512, max_iter=2 → H=4) to the expected 512 hard bits
+bit-for-bit on silicon at the PLL-derived 12.5 MHz.
+
 ## GHDL self-check (sim gate — no Quartus needed)
 
 The cocotb lane under `hdl/sim/turbo_decoder_de2/` elaborates

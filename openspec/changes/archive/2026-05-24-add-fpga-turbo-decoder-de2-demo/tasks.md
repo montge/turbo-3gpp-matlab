@@ -69,13 +69,22 @@
 
 ## 4. On-board program-and-observe (hardware-gated — USER's board)
 
-- [ ] 4.1 Program the DE2 (`quartus_pgm -c USB-Blaster -m jtag -o
+- [x] 4.1 Program the DE2 (`quartus_pgm -c USB-Blaster -m jtag -o
   "p;output_files/turbo_decoder_de2.sof"`, 13.0sp1) — configuration succeeds.
-- [ ] 4.2 Trigger the self-check (power-up free-run or KEY[0]); confirm the
+- [x] 4.2 Trigger the self-check (power-up free-run or KEY[0]); confirm the
   **pass** LED (LEDG[0]) lights and the 7-seg shows "A5" — i.e. the on-board
   `turbo_decoder_top` decoded the committed K=512 channel-LLR golden vector to
   the expected K hard bits bit-for-bit. Record the board, cable, device JTAG ID,
   and the observed pass/fail.
+
+> **On-board result — PASS (2026-05-24).** Programmed the DE2 (Cyclone II
+> `EP2C35F672C6`) over USB-Blaster JTAG with
+> `quartus_pgm -c USB-Blaster -m jtag -o "p;output_files/turbo_decoder_de2.sof"`
+> — *"Configuration succeeded -- 1 device(s) configured, 0 errors"*. The on-chip
+> self-check showed **LEDG[0] green + HEX = A5 + LEDR[0] off + LEDR[1] (done)
+> on = PASS** — the on-board `turbo_decoder_top` decoded the committed K=512
+> channel-LLR golden vector to the expected 512 hard bits bit-for-bit on silicon
+> at the PLL-derived 12.5 MHz.
 
 ## 5. Documentation + validation
 
