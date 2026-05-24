@@ -1,0 +1,80 @@
+# Quartus II 13.0sp1 settings for the DE2 turbo_decoder_top board demo (K=512).
+# Device string is EP2C35F672C6 (the lead-free board marking EP2C35F672C6N is
+# packaging-only and is NOT a separate Quartus device string).
+#
+# PIN ASSIGNMENTS BELOW are copied VERBATIM from the verified tx_chain_de2.qsf
+# (same Terasic DE2 board, same CLOCK_50 / KEY / LEDR / LEDG / HEX0 / HEX1
+# subset). They are valid package pins so synthesis/fitting succeed without a
+# board, but they MUST be cross-checked against the Terasic DE2 user manual
+# before programming real hardware (the gated stage-4 task).
+#
+# The whole demo runs on a PLL-derived ~12.5 MHz clock (CLOCK_50 / 4 via the
+# altpll wrapper pll_12p5.vhdl) -- the iterative decoder's pre-existing
+# ~64.8 ns forward alpha-recurrence cone caps Fmax at 15.43 MHz, so the 80 ns
+# (12.5 MHz) period clears it with margin (Option A). See turbo_decoder_de2.sdc.
+
+set_global_assignment -name FAMILY "Cyclone II"
+set_global_assignment -name DEVICE EP2C35F672C6
+set_global_assignment -name TOP_LEVEL_ENTITY turbo_decoder_de2_top
+set_global_assignment -name ORIGINAL_QUARTUS_VERSION "13.0 SP1"
+set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
+set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
+
+# --- Source files: iterative turbo-decoder RTL (unmodified) + shared QPP +
+#     altpll PLL wrapper (synthesis) + shared hex decoder + board golden ROM +
+#     board wrapper. hex7seg is referenced, not copied. The SIM PLL divider
+#     (pll_12p5_sim.vhdl) is NOT listed here -- it is a GHDL-only stand-in. ---
+set_global_assignment -name VHDL_FILE ../../rtl/qpp_rom_pkg.vhd
+set_global_assignment -name VHDL_FILE ../../rtl/qpp_rom.vhdl
+set_global_assignment -name VHDL_FILE ../../rtl/qpp_interleaver.vhdl
+set_global_assignment -name VHDL_FILE ../../rtl/constituent_decoder.vhdl
+set_global_assignment -name VHDL_FILE ../../rtl/turbo_decoder_top.vhdl
+set_global_assignment -name VHDL_FILE pll_12p5_mf.vhd
+set_global_assignment -name VHDL_FILE pll_12p5.vhdl
+set_global_assignment -name VHDL_FILE ../hex7seg.vhdl
+set_global_assignment -name VHDL_FILE turbo_decoder_golden_pkg.vhdl
+set_global_assignment -name VHDL_FILE turbo_decoder_de2_top.vhdl
+set_global_assignment -name SDC_FILE turbo_decoder_de2.sdc
+
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD "3.3-V LVTTL"
+
+# Unused pins: keep them from driving board nets.
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
+
+# --- CLOCK_50 (50 MHz oscillator, DE2 canonical pin) ---
+set_location_assignment PIN_N2 -to CLOCK_50
+
+# --- KEY[3:0] push buttons (active-low), canonical DE2 pins; KEY[0] used ---
+set_location_assignment PIN_G26 -to KEY[0]
+set_location_assignment PIN_N23 -to KEY[1]
+set_location_assignment PIN_P23 -to KEY[2]
+set_location_assignment PIN_W26 -to KEY[3]
+
+# --- LEDR[1:0] red LEDs (copied VERBATIM from tx_chain_de2.qsf) ---
+set_location_assignment PIN_AE23 -to LEDR[0]
+set_location_assignment PIN_AF23 -to LEDR[1]
+
+# --- LEDG[1:0] green LEDs (canonical Terasic DE2 pins) ---
+set_location_assignment PIN_AE22 -to LEDG[0]
+set_location_assignment PIN_AF22 -to LEDG[1]
+
+# --- HEX0[6:0] seven-segment (active low) — VERBATIM from tx_chain_de2.qsf ---
+set_location_assignment PIN_AF10 -to HEX0[0]
+set_location_assignment PIN_AB12 -to HEX0[1]
+set_location_assignment PIN_AC12 -to HEX0[2]
+set_location_assignment PIN_AD11 -to HEX0[3]
+set_location_assignment PIN_AE11 -to HEX0[4]
+set_location_assignment PIN_V14 -to HEX0[5]
+set_location_assignment PIN_V13 -to HEX0[6]
+
+# --- HEX1[6:0] seven-segment (active low) — VERBATIM from tx_chain_de2.qsf ---
+set_location_assignment PIN_V20 -to HEX1[0]
+set_location_assignment PIN_V21 -to HEX1[1]
+set_location_assignment PIN_W21 -to HEX1[2]
+set_location_assignment PIN_Y22 -to HEX1[3]
+set_location_assignment PIN_AA24 -to HEX1[4]
+set_location_assignment PIN_AA23 -to HEX1[5]
+set_location_assignment PIN_AB24 -to HEX1[6]
+
+set_global_assignment -name LAST_QUARTUS_VERSION "13.0 SP1"
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_NO_OUTPUT_GND "AS INPUT TRI-STATED"
