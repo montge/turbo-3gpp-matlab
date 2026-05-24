@@ -107,5 +107,5 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
   two-tier + end-to-end method, the de-rate-match-as-inverse algebra, the CSV
   schema, W_LLR/W_DRM/W_EXT pins, regenerate + run commands, roadmap pointer; note
   the deferred multi-CB / CRC-term / HARQ follow-ons.
-- [ ] 6.3 `npx openspec validate add-fpga-rx-chain-integration --strict` and
+- [x] 6.3 `npx openspec validate add-fpga-rx-chain-integration --strict` and
   `npx openspec validate --all --strict` pass.
