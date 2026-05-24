@@ -100,11 +100,17 @@ architecture rtl of de_circular_buffer is
   constant DRM_MAX  : integer :=  (2**(W_DRM-1)) - 1;
 
   -- Soft w buffer, bank-split sys/ev/od (mirrors circular_buffer's w_sys/ev/od
-  -- bit banks, but each word is a signed W_DRM soft LLR accumulator).
+  -- bit banks, but each word is a signed W_DRM soft LLR accumulator). Each bank
+  -- has ONE write port and ONE read port (a SINGLE shared read address; see
+  -- below) so it infers the M4K simple-dual-port template, like the decoder's
+  -- ext_mem banks -- NOT LE registers.
+  -- NO power-up initializer (matches the decoder's ext_mem banks): the S_CLR
+  -- sweep zeroes all three banks at runtime before any accumulate (the erasure
+  -- default), so an init would only block clean M4K inference.
   type soft_arr is array (0 to BANK_MAX-1) of integer;
-  signal w_sys : soft_arr := (others => 0);            -- row 1 (systematic)
-  signal w_ev  : soft_arr := (others => 0);            -- row 2 (even parity)
-  signal w_od  : soft_arr := (others => 0);            -- row 3 (odd parity)
+  signal w_sys : soft_arr;                             -- row 1 (systematic)
+  signal w_ev  : soft_arr;                             -- row 2 (even parity)
+  signal w_od  : soft_arr;                             -- row 3 (odd parity)
   attribute ramstyle : string;
   attribute ramstyle of w_sys : signal is "M4K";
   attribute ramstyle of w_ev  : signal is "M4K";
@@ -115,12 +121,17 @@ architecture rtl of de_circular_buffer is
   signal wr_bank : integer range 0 to 2 := 0;          -- 0=sys 1=ev 2=od
   signal wr_col  : integer range 0 to BANK_MAX-1 := 0;
   signal wr_data : integer := 0;
-  -- Registered reads: accumulate RMW read (rd_col/rd_bank) and the caller's
-  -- read-back (rb_addr).
-  signal rd_col  : integer range 0 to BANK_MAX-1 := 0;
-  signal rd_bank : integer range 0 to 2 := 0;
-  signal rd_acc  : integer := 0;                       -- registered RMW read
-  signal rb_sys, rb_ev, rb_od : integer := 0;          -- registered read-back
+  -- SINGLE shared read address per bank so each bank stays single-read-port
+  -- (M4K-inferable). The accumulate RMW read (rd_col, active bank) and the
+  -- caller's scatter read-back (rb_addr) are used in DISJOINT phases (accumulate
+  -- vs after-done scatter), so one read address suffices: rdaddr = rd_col while
+  -- accumulating, = rb_addr during read-back. All three banks register their
+  -- read at rdaddr each cycle; the RMW consumes only the active bank's word,
+  -- the read-back consumes all three.
+  signal rd_col   : integer range 0 to BANK_MAX-1 := 0;
+  signal rd_bank  : integer range 0 to 2 := 0;
+  signal rdaddr   : integer range 0 to BANK_MAX-1 := 0;   -- shared read address
+  signal rd_sys, rd_ev, rd_od : integer := 0;             -- registered bank reads
 
   -- FSM mirrors circular_buffer's compute/read states; the read step becomes a
   -- 2-phase RMW accumulate (S_RD then S_WR), plus a 3-pass clear of the soft
@@ -179,38 +190,40 @@ begin
   -- flag is used). Sized to 14 bits (K_Pi width).
   f_col_o <= std_logic_vector(to_unsigned(cur_col, 14));
 
-  rb_sys_o <= std_logic_vector(to_signed(rb_sys, W_DRM));
-  rb_ev_o  <= std_logic_vector(to_signed(rb_ev,  W_DRM));
-  rb_od_o  <= std_logic_vector(to_signed(rb_od,  W_DRM));
+  -- The caller's scatter read-back is the registered bank read (driven by
+  -- rdaddr = rb_addr in S_IDLE, the post-done scatter phase).
+  rb_sys_o <= std_logic_vector(to_signed(rd_sys, W_DRM));
+  rb_ev_o  <= std_logic_vector(to_signed(rd_ev,  W_DRM));
+  rb_od_o  <= std_logic_vector(to_signed(rd_od,  W_DRM));
 
-  -- ---- Dedicated memory process: bank writes (single port, lifted out of the
-  -- reset/case nest) + registered reads (RMW accumulate + caller read-back). --
+  -- Shared read address: rd_col while accumulating (S_IDLE means the core is
+  -- idle / the caller is doing its read-back, so use rb_addr). One read address
+  -- per bank keeps each bank single-read-port -> M4K simple-dual-port.
+  rdaddr <= to_integer(unsigned(rb_addr)) when st = S_IDLE else rd_col;
+
+  -- ---- Dedicated memory process: bank writes (single port) + ONE registered
+  -- read per bank at the shared rdaddr. Each bank is write-port + read-port =
+  -- the M4K simple-dual-port template (ramstyle="M4K"), not LE registers. ----
   mem : process (clk)
   begin
     if rising_edge(clk) then
-      if wr_en = '1' then
-        case wr_bank is
-          when 0      => w_sys(wr_col) <= wr_data;
-          when 1      => w_ev(wr_col)  <= wr_data;
-          when others => w_od(wr_col)  <= wr_data;
-        end case;
-      end if;
-      -- registered RMW read of the current bank at rd_col.
-      case rd_bank is
-        when 0      => rd_acc <= w_sys(rd_col);
-        when 1      => rd_acc <= w_ev(rd_col);
-        when others => rd_acc <= w_od(rd_col);
-      end case;
-      -- registered caller read-back of all three banks at rb_addr.
-      rb_sys <= w_sys(to_integer(unsigned(rb_addr)));
-      rb_ev  <= w_ev (to_integer(unsigned(rb_addr)));
-      rb_od  <= w_od (to_integer(unsigned(rb_addr)));
+      -- Per-bank write enable (dedicated, NOT a shared case) -- exactly the
+      -- decoder ext_mem template, so each bank is a clean single-write/
+      -- single-read SDP and infers M4K (not LE registers).
+      if wr_en = '1' and wr_bank = 0 then w_sys(wr_col) <= wr_data; end if;
+      if wr_en = '1' and wr_bank = 1 then w_ev(wr_col)  <= wr_data; end if;
+      if wr_en = '1' and wr_bank = 2 then w_od(wr_col)  <= wr_data; end if;
+      -- single registered read per bank at the shared address.
+      rd_sys <= w_sys(rdaddr);
+      rd_ev  <= w_ev (rdaddr);
+      rd_od  <= w_od (rdaddr);
     end if;
   end process mem;
 
   process (clk)
     variable rtc, kw, ncb : integer;
     variable r            : integer;
+    variable rmw_rd       : integer;   -- active-bank registered read for the RMW
   begin
     if rising_edge(clk) then
       ereq  <= '0';
@@ -348,19 +361,25 @@ begin
               st      <= S_RD;
             end if;
 
-          -- RMW read beat: rd_acc holds w_soft(pos) next edge; e_soft_in holds
-          -- the pulled LLR. (e_req was asserted in S_SKIP; the caller presents
-          -- e_soft_in this cycle.)
+          -- RMW read beat: rd_sys/ev/od hold w_soft(rd_col) next edge; e_soft_in
+          -- holds the pulled LLR. (e_req was asserted in S_SKIP; the caller
+          -- presents e_soft_in this cycle.) rdaddr = rd_col this cycle.
           when S_RD =>
             st <= S_WR;
 
-          -- RMW write beat: w_soft(pos) += e_soft (saturating). rd_acc is the
-          -- registered read of pos; add and write back the SAME bank/col.
+          -- RMW write beat: w_soft(pos) += e_soft (saturating). The registered
+          -- read of pos is the active bank's rd_sys/ev/od (rd_bank = cur_bank);
+          -- add and write back the SAME bank/col.
           when S_WR =>
             wr_en   <= '1';
             wr_bank <= cur_bank;
             wr_col  <= cur_col;
-            wr_data <= sat_add(rd_acc, to_integer(signed(e_soft_in)),
+            case rd_bank is
+              when 0      => rmw_rd := rd_sys;
+              when 1      => rmw_rd := rd_ev;
+              when others => rmw_rd := rd_od;
+            end case;
+            wr_data <= sat_add(rmw_rd, to_integer(signed(e_soft_in)),
                                DRM_MIN, DRM_MAX);
             kk <= kk + 1;
             if kk = Ev - 1 then

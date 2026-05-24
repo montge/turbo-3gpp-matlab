@@ -72,7 +72,7 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 4. Inner simulation lane (bit-exact)
 
-- [ ] 4.1 Add `hdl/sim/de_rate_matching_top/` (Makefile + cocotb) mirroring the
+- [x] 4.1 Add `hdl/sim/de_rate_matching_top/` (Makefile + cocotb) mirroring the
   established lanes; compile `de_rate_matching_top` + `subblock_interleaver`
   (+ the `de_circular_buffer` sibling). Driver loads `K`/`N_ref`/`I_LBRM`/`rv`/`E`/
   `F_r`/`e_soft`, collects the `3×(K+4)` `d_a`, asserts **bit-exact** vs the golden
@@ -81,29 +81,29 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 5. End-to-end verify (TX → AWGN → RX)
 
-- [ ] 5.1 Add `hdl/sim/rx_chain_top/` (Makefile + cocotb): compile `rx_chain_top`
+- [x] 5.1 Add `hdl/sim/rx_chain_top/` (Makefile + cocotb): compile `rx_chain_top`
   + `de_rate_matching_top` + `subblock_interleaver` + the reused (UNMODIFIED)
   `turbo_decoder_top`, `constituent_decoder`, `qpp_rom`, `qpp_interleaver`. A
   couple of end-to-end smoke frames (TX golden frame → AWGN-quantized LLRs → RX),
   hard-decoded K bits checked.
-- [ ] 5.2 Add `scripts/characterize_rx_chain.m` — bounded end-to-end **BER**
+- [x] 5.2 Add `scripts/characterize_rx_chain.m` — bounded end-to-end **BER**
   harness: random block → `turbo_encoder` → `rate_matching` → BPSK+AWGN →
   quantize to W_LLR → RX chain (fixed-point de-rate-match → fixed-point turbo
   decode) → compare decoded bits / BER-vs-SNR against float `turbo_decoding_chain`
   on the **same** frames over a bounded SNR grid (few points, modest frames,
   shallow target BER); assert within the documented decoder dB margin (≤ ~1.0 dB).
   Record in `results/characterize_rx_chain.txt`.
-- [ ] 5.3 Regression: all prior HDL lanes (TX lanes + P1/P2/P3 decoder lanes +
+- [x] 5.3 Regression: all prior HDL lanes (TX lanes + P1/P2/P3 decoder lanes +
   CRC) and the Octave suite still pass; reused cores (`turbo_decoder_top`,
   `subblock_interleaver`, the TX `circular_buffer`) byte-unchanged.
 
 ## 6. Fit + docs + validate
 
-- [ ] 6.1 Quartus II 13.0sp1 fit of `rx_chain_top` on the EP2C35F672C6 at a
+- [x] 6.1 Quartus II 13.0sp1 fit of `rx_chain_top` on the EP2C35F672C6 at a
   board-demo `K` (e.g. K = 512, sized generics) — record LE / M4K / registers /
   DSP / Fmax; the soft `w` RAM infers M4K (sys/ev/od banks, like the TX
   `circular_buffer`).
-- [ ] 6.2 Add `hdl/sim/de_rate_matching_top/README.md` (+ `rx_chain_top/README.md`):
+- [x] 6.2 Add `hdl/sim/de_rate_matching_top/README.md` (+ `rx_chain_top/README.md`):
   two-tier + end-to-end method, the de-rate-match-as-inverse algebra, the CSV
   schema, W_LLR/W_DRM/W_EXT pins, regenerate + run commands, roadmap pointer; note
   the deferred multi-CB / CRC-term / HARQ follow-ons.

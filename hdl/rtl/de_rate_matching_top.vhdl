@@ -193,7 +193,7 @@ architecture rtl of de_rate_matching_top is
 
   type state_t is (
     S_IDLE, S_MAP_START, S_MAP, S_DCB_START, S_DCB,
-    S_SC_PRIME, S_SC, S_FILL, S_OUT_PRIME, S_OUT, S_DONE);
+    S_SC_PRIME, S_SC, S_FILL, S_OUT_PRIME, S_OUT_PRIME2, S_OUT, S_DONE);
   signal st : state_t := S_IDLE;
 
   signal Kr   : integer range 0 to 6144 := 0;
@@ -225,6 +225,14 @@ architecture rtl of de_rate_matching_top is
   signal fill_lo  : std_logic := '0';                  -- low/high of the F_r pair
   signal out_col  : integer range 0 to DMAX := 0;      -- output column index
   signal out_sub  : integer range 0 to 2 := 0;         -- which of the 3 rows
+  -- Output streaming pointers. The d_a buffer read is REGISTERED (1-cycle
+  -- latency): dr_data at cycle T reflects dr_addr presented at T-1. So the
+  -- output walk separates the ADDRESS pointer (out_p = the d_vec index being
+  -- presented on dr_addr this cycle) from the CAPTURE phase (cap_sub = which of
+  -- the 3 rows the word arriving in dr_data this cycle belongs to). out_cap
+  -- gates capturing until the first presented word has had its latency cycle.
+  signal out_p    : integer range 0 to DVEC_MAX := 0;  -- d_vec index presented
+  signal cap_sub  : integer range 0 to 2 := 0;         -- row of the arriving word
 
   -- output regs (collect a column's 3 words then beat).
   signal da1r, da2r, da3r : integer := 0;
@@ -364,15 +372,39 @@ begin
           -- k = map_col (the subblock counter, all three in lockstep). The
           -- d_vec target for d(row,d-index) is 3*d-index + (row-1):
           --   sys (row1): 3*s0_idx + 0,  ev (row2): 3*s1_idx + 1,
-          --   od  (row3): 3*s2_idx + 2.  Filler flags pass through.
+          --   od  (row3): 3*s2_idx + 2.
+          --
+          -- FILLER FLAG (the TX rate_matching read-skip set). The oracle builds
+          -- pi via rate_matching on the index template d_idx(1:2,1:F_r) = NaN
+          -- (turbo_coding_chain.m), so the TX read skips BOTH (i) the subblock
+          -- NaN PAD positions (the N_D = K_Pi - D left-pad; s*_f) AND (ii) the
+          -- D-LEVEL FILLER -- rows 1:2 of the first F_r columns, i.e. the
+          -- systematic and even-parity sub-block elements whose d-index < F_r.
+          -- The de-rate-match circular read must skip the SAME positions, so a
+          -- w-position is filler when it is a subblock pad OR its d-element is a
+          -- d-level filler:
+          --   sys (row1, idx0): s0_f OR (s0_idx < F_r)
+          --   ev  (row2, idx1): s1_f OR (s1_idx < F_r)
+          --   od  (row3, idx2): s2_f only  (row 3 is never d-level filler).
+          -- (Marking these filler both skips the circular read accumulate AND
+          -- drops the scatter; rows 1:2 of cols 0..F_r-1 are then written the
+          -- +inf MAX_SENT token in S_FILL, matching the float d(1:2,1:F_r)=NaN.)
           when S_MAP =>
             if s0_v = '1' then
               mw_en    <= '1';
               mw_col   <= map_col;
               mw_sys_t <= 3 * to_integer(unsigned(s0_idx)) + 0;
-              mw_sys_f <= s0_f;
+              if s0_f = '1' or to_integer(unsigned(s0_idx)) < Fr then
+                mw_sys_f <= '1';
+              else
+                mw_sys_f <= '0';
+              end if;
               mw_ev_t  <= 3 * to_integer(unsigned(s1_idx)) + 1;
-              mw_ev_f  <= s1_f;
+              if s1_f = '1' or to_integer(unsigned(s1_idx)) < Fr then
+                mw_ev_f <= '1';
+              else
+                mw_ev_f <= '0';
+              end if;
               mw_od_t  <= 3 * to_integer(unsigned(s2_idx)) + 2;
               mw_od_f  <= s2_f;
               if s0_l = '1' then
@@ -474,38 +506,55 @@ begin
               end if;
             end if;
 
-          -- Output: stream the 3x(K+4) d_a column-major. For column out_col
-          -- read d_vec[3*out_col + out_sub] (out_sub 0/1/2); collect the three
-          -- into da1/2/3r, then emit a da_valid beat. dr_addr (registered)
-          -- presents one word/cycle; S_OUT_PRIME primes the first read.
+          -- Output: stream the 3x(K+4) d_a matrix COLUMN-MAJOR (d_vec index
+          -- 0,1,2,... = col0 row1/2/3, col1 row1/2/3, ...). The d_a buffer read
+          -- is REGISTERED, so dr_data lags dr_addr by one cycle. We therefore
+          -- run two pointers: out_p presents d_vec[out_p] on dr_addr each cycle,
+          -- and the word arriving in dr_data this cycle is d_vec[out_p_prev]
+          -- whose row is cap_sub. S_OUT_PRIME presents index 0 and leaves
+          -- capture disabled for one latency cycle (cap "armed" by entering
+          -- S_OUT with out_p already = 1).
           when S_OUT_PRIME =>
             dr_addr <= 0;              -- present d_vec[0]
-            out_sub <= 0;
+            out_p   <= 1;
+            cap_sub <= 0;
             out_col <= 0;
+            st      <= S_OUT_PRIME2;
+
+          -- One latency bubble: present d_vec[1], advance the pointer, but do
+          -- NOT capture yet -- dr_data only settles to d_vec[0] entering S_OUT
+          -- (the registered read presented in S_OUT_PRIME lands one cycle
+          -- later). This is the analogue of the de_circular_buffer S_FETCH /
+          -- the TX circular_buffer S_PRIME read-latency beat.
+          when S_OUT_PRIME2 =>
+            dr_addr <= 1;
+            out_p   <= 2;
             st      <= S_OUT;
 
           when S_OUT =>
-            -- dr_data holds d_vec[3*out_col + out_sub] (presented last cycle).
-            case out_sub is
+            -- dr_data holds d_vec[out_p-2] (presented two cycles ago); its row
+            -- within the current column is cap_sub. Keep presenting indices.
+            if out_p < 3 * Dr then
+              dr_addr <= out_p;
+              out_p   <= out_p + 1;
+            end if;
+            case cap_sub is
               when 0 =>
                 da1r    <= dr_data;
-                dr_addr <= 3 * out_col + 1;
-                out_sub <= 1;
+                cap_sub <= 1;
               when 1 =>
                 da2r    <= dr_data;
-                dr_addr <= 3 * out_col + 2;
-                out_sub <= 2;
+                cap_sub <= 2;
               when others =>
                 da3r <= dr_data;
-                -- all three of this column captured -> emit beat next cycle.
+                -- all three rows of this column captured -> emit beat now.
                 dav  <= '1';
+                cap_sub <= 0;
                 if out_col = Dr - 1 then
                   dal <= '1';
                   st  <= S_DONE;
                 else
                   out_col <= out_col + 1;
-                  out_sub <= 0;
-                  dr_addr <= 3 * (out_col + 1) + 0;
                 end if;
             end case;
 
