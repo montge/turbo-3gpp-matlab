@@ -187,20 +187,86 @@ architecture rtl of turbo_decoder_top is
   end component;
 
   -- ---- LLR / extrinsic memories (integer codes). ----
-  -- Persistent (set once at load):
-  type in_mem_t  is array (0 to N_MAX-1) of integer;  -- W_IN-grid words
-  signal za_mem  : in_mem_t;   -- z_a[0..K+2]  (upper parity + termination)
-  signal zpa_mem : in_mem_t;   -- z'_a[0..K+2] (lower parity + termination)
+  -- M4K BLOCK-RAM INFERENCE REWORK (add-fpga-decoder-block-ram-inference,
+  -- stage 2). Every array below is accessed ONLY through the dedicated,
+  -- unconditional clocked memory process `mem_proc` (writes lifted out of the
+  -- reset-guarded `if rst .. else case st ..` FSM body; reads registered =
+  -- synchronous). The FSM drives only write-enables / write-data / write-address
+  -- and a registered LEAD COUNTER; the read ADDRESS is a pure COMBINATIONAL
+  -- function of that counter + state (read_addr_comb), so there is exactly ONE
+  -- register on the address path -- the data for the address presented this
+  -- cycle appears next cycle. (An intermediate registered *_raddr would add a
+  -- second register and desync the consume by one beat -- the salvaged draft's
+  -- bug.) The FSM consumes the registered read-data signals, never the arrays.
+  -- This is the proven TX recipe (turbo_encode_top / rate_matching_top): with
+  -- the write at the top level of a clocked process and a single-register sync
+  -- read, Quartus II 13.0sp1 infers a Cyclone II M4K simple-dual-port
+  -- (altsyncram OPERATION_MODE=DUAL_PORT, ADDRESS_REG_B=CLOCK0, *_ACLR=NONE,
+  -- READ_DURING_WRITE_MODE=OLD_DATA); nested under the reset/case it falls back
+  -- to LE registers (Total memory bits : 0). Each array carries ramstyle="M4K"
+  -- (belt-and-suspenders so a future re-bury fails loudly). The :=(default)
+  -- power-up init and the absence of any async clear on the array body are
+  -- preserved. The one-cycle sync-read latency is absorbed inside the owning FSM
+  -- (S_*_PRIME prime beats below), so the decoded bit stream is bit-identical to
+  -- scripts/fixedpoint_turbo_decoder.m (cocotb gate: all K/max_iter bit-exact).
+  --
+  -- INTEGRATED K=512 FIT (stage 3 -- this core's M4K loop memories + the
+  -- constituent core's M4K alpha/xa/za, both reworked, synthesized together as
+  -- turbo_decoder_top with K_MAX=512 / N_MAX=515; Quartus II 13.0sp1,
+  -- EP2C35F672C6, VHDL_2008, 50 MHz):
+  --   * BEFORE (master, LE-banked): M4K = 0 (Total memory bits : 0), the
+  --       full-block alpha/LLR/extrinsic stores were huge LE register banks --
+  --       the inference blocker; did not fit as a board target.
+  --   * AFTER (integrated): FITS. Logic = 10,978 LE / 33,216 (33%); M4K = 57 /
+  --       105 (54%); Total memory bits = 162,206 / 483,840 (34%); registers =
+  --       1,404; embedded multipliers = 0 / 70. All decoder memories infer
+  --       altsyncram M4K (no LE-register fallback) -- the constituent core's
+  --       alpha_mem (30 M4K) + xa/za, and this core's 7 loop mems incl. ca_mem
+  --       as a simple-dual-port scatter (4 M4K, RDW = OLD_DATA matching the
+  --       reference). 0 A&S / Fitter errors.
+  --   * Fmax (sign-off slow model) = 15.43 MHz, critical path = the constituent
+  --       core's FORWARD alpha recurrence (constituent_decoder:u_cd alpha_prev,
+  --       ~64.8 ns combinational cone). This cone is PRE-EXISTING in the
+  --       Max-Log-MAP algorithm, NOT introduced by the M4K rework, and is the
+  --       SAME 15.x MHz limit the constituent core hits standalone. Per the
+  --       user's Option A the DE2 demo runs on a slower (~12.5 MHz) PLL clock;
+  --       closing 50 MHz would need the algorithmic forward-recurrence
+  --       pipelining (a separate increment, design Risks). Bit-exactness is
+  --       preserved across all decoder lanes (constituent_decoder 27,
+  --       turbo_decoder_top 20, turbo_decoder_term_top 10 frames; golden vectors
+  --       byte-identical to master).
+  attribute ramstyle : string;
+  -- Persistent (set once at load). z_a / z'_a BODY (indices 0..K-1) -> M4K;
+  -- the 3 termination words (indices K..K+2) live in za_termz / zpa_termz small
+  -- register arrays (declared with the other term triplets below) because the
+  -- load de-mux writes two distinct termination indices in one beat, which a
+  -- single-write-port M4K cannot do -- and they are only 3 words each.
+  type in_mem_t  is array (0 to K_MAX-1) of integer;  -- W_IN-grid body words
+  signal za_mem  : in_mem_t;   -- z_a[0..K-1]  (upper parity body)
+  signal zpa_mem : in_mem_t;   -- z'_a[0..K-1] (lower parity body)
+  attribute ramstyle of za_mem  : signal is "M4K";
+  attribute ramstyle of zpa_mem : signal is "M4K";
   -- ch_sys lives on the W_EXT grid (feeds the accumulator adds); body only.
+  -- ONE 1W/1R copy: the UPPER feed accumulate (chs_mem(feed_idx), ~471) and the
+  -- capture accumulate (chs_mem(cap_idx), ~490/496) are TEMPORALLY DISJOINT
+  -- (the core streams x_e for capture ~2N cycles AFTER the last feed beat -- it
+  -- loads N, forwards N, then backward-emits N), so the single registered read
+  -- port is time-shared across the feed and capture phases of S_UP_DEC.
   type ext_mem_t is array (0 to K_MAX-1) of integer;  -- W_EXT-grid words
   signal chs_mem : ext_mem_t;  -- ch_sys[0..K-1]
+  attribute ramstyle of chs_mem : signal is "M4K";
   -- Termination triplets for the upper/lower core input (W_IN grid, constant).
+  -- Tiny (3 words) constant registers -- left as plain registers (no M4K).
   type term_t is array (0 to 2) of integer;
-  signal xa_term  : term_t;    -- x_a[K..K+2]
-  signal xpa_term : term_t;    -- x'_a[K..K+2]
+  signal xa_term   : term_t;   -- x_a[K..K+2]
+  signal xpa_term  : term_t;   -- x'_a[K..K+2]
+  signal za_termz  : term_t;   -- z_a[K..K+2]   (upper parity termination)
+  signal zpa_termz : term_t;   -- z'_a[K..K+2]  (lower parity termination)
   -- Cyclic state (W_EXT grid):
   signal ca_mem : ext_mem_t;   -- c_a[0..K-1] interleaved extrinsic (state)
   signal ce_mem : ext_mem_t;   -- c_e[0..K-1] upper-decoder cyclic extrinsic
+  attribute ramstyle of ca_mem : signal is "M4K";
+  attribute ramstyle of ce_mem : signal is "M4K";
 
   signal Kr : integer range 0 to K_MAX := 0;
   signal Nr : integer range 0 to N_MAX := 0;   -- N = K+3
@@ -213,18 +279,25 @@ architecture rtl of turbo_decoder_top is
   -- names them as conceptual sub-steps, here merged to avoid extra passes.
   type state_t is (
     S_IDLE, S_LOAD_D,
+    -- c_a = 0 init re-sequenced to a one-write-per-cycle clearing sweep so the
+    -- single c_a write port maps to M4K (was a broadside for-loop write).
+    S_CA_CLEAR,
     -- K is constant, so the ROM (K -> d0,step) is looked up ONCE after load
     -- and the result cached; lower halves only re-run the interleaver.
     S_ROM_START, S_ROM_WAIT,
     S_HALF_DISPATCH,
-    -- upper half  (S_UP_BUILD/S_UP_DEC/S_UP_CE folded into S_UP_DEC)
-    S_UP_DEC,
+    -- upper half  (S_UP_BUILD/S_UP_DEC/S_UP_CE folded into S_UP_DEC). S_UP_PRIME
+    -- is a one-beat feed prime: read_addr_comb presents the body index-0 read
+    -- address (rd_idx=0) so the first S_UP_DEC beat consumes valid registered
+    -- ca/chs/za data (one-cycle sync-read latency absorbed; bit-exact).
+    S_UP_PRIME, S_UP_DEC,
     -- lower half  (S_LO_ILV = PI1 interleave read; S_LO_DEC; S_LO_DILV =
     -- PI2 deinterleave scatter, folded into S_LO_PI2). Each PI phase pulses
-    -- qi_start then waits for qi_valid in its *_WAIT substate.
-    S_LO_PI1_START, S_LO_PI1, S_LO_DEC, S_LO_PI2_START, S_LO_PI2,
-    -- finish
-    S_FINAL, S_OUT, S_DONE);
+    -- qi_start then waits for qi_valid in its *_WAIT substate. S_LO_PRIME
+    -- primes the LOWER feed read like S_UP_PRIME.
+    S_LO_PI1_START, S_LO_PI1, S_LO_PRIME, S_LO_DEC, S_LO_PI2_START, S_LO_PI2,
+    -- finish.  S_OUT_PRIME primes the registered ca/ce read for index 0.
+    S_FINAL, S_OUT_PRIME, S_OUT, S_DONE);
   signal st : state_t := S_IDLE;
 
   signal h_cnt : integer range 0 to H + 1 := 0;   -- half-iteration index
@@ -246,7 +319,6 @@ architecture rtl of turbo_decoder_top is
 
   signal feed_idx : integer range 0 to N_MAX := 0;   -- core-input stream index
   signal cap_idx  : integer range 0 to N_MAX := 0;   -- core-output (reverse) idx
-  signal cap_seen : std_logic := '0';                -- first out_valid seen?
 
   -- QPP address generation.
   signal rom_start, rom_done, rom_sup : std_logic := '0';
@@ -262,12 +334,88 @@ architecture rtl of turbo_decoder_top is
   -- forward-order x'_e body into c_a.
   signal xpa_body : ext_mem_t;          -- interleaved core-input body (W_EXT)
   signal xpe_body : ext_mem_t;          -- captured x'_e body (W_EXT-clipped)
+  attribute ramstyle of xpa_body : signal is "M4K";
+  attribute ramstyle of xpe_body : signal is "M4K";
   signal pi_k     : integer range 0 to K_MAX := 0;   -- pi-stream index k
 
   -- Output streaming.
   signal out_idx : integer range 0 to K_MAX := 0;
   signal ov, ol, dn, bsy : std_logic := '0';
   signal cbit : std_logic := '0';
+
+  -- ======================================================================
+  -- Memory-port signals (drive mem_proc; the FSM never touches the arrays).
+  -- Each memory has a write port (we/addr/data) and a registered read port
+  -- (read address presented this cycle, read DATA appears next cycle). All
+  -- reads are registered (synchronous) so every array infers an M4K. ALL
+  -- defaults below are zero so an idle/reset cycle drives no write.
+  -- ======================================================================
+  -- z_a / z'_a BODY (write address at load = lcol < Kr; read address =
+  -- feed_idx clamped to the body; termination indices use za_termz/zpa_termz).
+  signal za_we, zpa_we     : std_logic := '0';
+  signal za_waddr          : integer range 0 to K_MAX-1 := 0;
+  signal za_wdata, zpa_wdata : integer := 0;
+  signal za_raddr, zpa_raddr : integer range 0 to K_MAX-1 := 0;
+  signal za_rd, zpa_rd     : integer := 0;       -- registered read data
+  -- ch_sys (one copy; read port time-shared feed accumulate vs capture).
+  signal chs_we            : std_logic := '0';
+  signal chs_waddr         : integer range 0 to K_MAX-1 := 0;
+  signal chs_wdata         : integer := 0;
+  signal chs_raddr         : integer range 0 to K_MAX-1 := 0;
+  signal chs_rd            : integer := 0;       -- registered read data
+  -- c_a : ONE write port (init-clear sweep OR PI2 scatter at pi_idx) + ONE
+  -- registered read port (UPPER feed accumulate OR final-decision sweep). The
+  -- write and read NEVER occur in the same FSM state (disjoint phases -- see
+  -- the ca_mem RDW disjointness note at mem_proc), so the inferred SDP
+  -- READ_DURING_WRITE_MODE is don't-care.
+  signal ca_we             : std_logic := '0';
+  signal ca_waddr          : integer range 0 to K_MAX-1 := 0;
+  signal ca_wdata          : integer := 0;
+  signal ca_raddr          : integer range 0 to K_MAX-1 := 0;
+  signal ca_rd             : integer := 0;       -- registered read data
+  -- c_e : ONE write port (UPPER capture) + ONE registered read port (PI1
+  -- interleave read OR final-decision sweep). Write/read phases are disjoint.
+  signal ce_we             : std_logic := '0';
+  signal ce_waddr          : integer range 0 to K_MAX-1 := 0;
+  signal ce_wdata          : integer := 0;
+  signal ce_raddr          : integer range 0 to K_MAX-1 := 0;
+  signal ce_rd             : integer := 0;       -- registered read data
+  -- x'_a body : 1W (PI1 gather) / 1R (LOWER feed read).
+  signal xpa_we            : std_logic := '0';
+  signal xpa_waddr         : integer range 0 to K_MAX-1 := 0;
+  signal xpa_wdata         : integer := 0;
+  signal xpa_raddr         : integer range 0 to K_MAX-1 := 0;
+  signal xpa_rd            : integer := 0;       -- registered read data
+  -- x'_e body : 1W (LOWER capture) / 1R (PI2 scatter read).
+  signal xpe_we            : std_logic := '0';
+  signal xpe_waddr         : integer range 0 to K_MAX-1 := 0;
+  signal xpe_wdata         : integer := 0;
+  signal xpe_raddr         : integer range 0 to K_MAX-1 := 0;
+  signal xpe_rd            : integer := 0;       -- registered read data
+
+  -- ---- Feed / capture pipeline helpers (absorb the 1-cycle read latency).
+  -- The feed loops present a read address one cycle AHEAD of the core beat:
+  -- rd_idx walks the read address, feed_idx counts the (registered) consume
+  -- beats. cap_rdv pipelines cd_out_valid by one cycle so the capture writes
+  -- land the registered chs read of the matching index.
+  signal rd_idx   : integer range 0 to N_MAX := 0;  -- feed read-address lead
+  -- Capture pipeline: the core streams x_e reverse-order (Nr-1 .. 0) on
+  -- consecutive cd_out_valid beats. cap_idx_d / cd_xe_d / cap_v_d are the
+  -- one-cycle-delayed capture index / x_e code / valid, aligned with the
+  -- registered chs_cap_rd read addressed by cap_idx the previous cycle.
+  signal cap_idx_d : integer range 0 to N_MAX := 0;
+  signal cd_xe_d   : integer := 0;
+  signal cap_v_d   : std_logic := '0';
+  -- PI1 / PI2 pipelines: ce_mem(pi_idx) read (PI1) and xpe_body(pi_k) read
+  -- (PI2) are registered; the consume (xpa_body write / ca_mem scatter) lands
+  -- one cycle later, tracking the delayed pi index.
+  signal pi_idx_d  : integer range 0 to K_MAX := 0;  -- delayed scatter addr
+  signal pi_k_d    : integer range 0 to K_MAX := 0;  -- delayed pi-stream idx
+  signal pi_v_d    : std_logic := '0';               -- delayed pi-valid
+  signal pi_last_d : std_logic := '0';               -- delayed PI2 last-beat
+  -- c_a init-clear sweep counter (re-sequences the broadside ca_mem(k)<=0 into
+  -- one write per cycle so the single write port maps to M4K).
+  signal clr_idx   : integer range 0 to K_MAX := 0;
 
   -- Saturating helpers (scalar signed integer, clamp - no wrap; mirror the .m).
   function sat_clip(x, lo, hi : integer) return integer is
@@ -318,6 +466,128 @@ begin
   busy      <= bsy;
   done      <= dn;
 
+  -- ======================================================================
+  -- Dedicated UNCONDITIONAL clocked memory process. Every array write is at
+  -- the top level here (gated only by a write-enable the FSM drives, NEVER by
+  -- rst / the FSM case), and every array read is registered (the data for the
+  -- address presented this edge appears next edge). This is the Quartus II
+  -- 13.0sp1 M4K simple-dual-port template (proven by the archived TX change).
+  --
+  -- ca_mem READ-DURING-WRITE DISJOINTNESS (the top-risk memory):
+  --   * the only WRITE to ca_mem is via ca_we, asserted in exactly two FSM
+  --     states -- S_CA_CLEAR (init sweep, addr=clr_idx) and S_LO_PI2 (QPP
+  --     deinterleave scatter, addr=pi_idx) -- both in the LOWER/idle phase.
+  --   * the only READ of ca_mem is via ca_raddr, used in S_UP_PRIME/S_UP_DEC
+  --     (UPPER feed accumulate) and S_OUT_PRIME/S_OUT (final decision).
+  --   The FSM is in exactly ONE state per cycle and a half-iteration completes
+  --   (returns to S_HALF_DISPATCH) before the next begins, so ca_we and a
+  --   ca_mem read NEVER assert in the same cycle -- no same-address (or any)
+  --   read-during-write hazard on the bit-exact path. The inferred SDP's
+  --   READ_DURING_WRITE_MODE is therefore don't-care (OLD_DATA-safe), matching
+  --   the GHDL behavioural model (which, with disjoint phases, also never
+  --   reads a just-written word the same cycle). A future edit that introduced
+  --   a same-cycle ca read+write would change a captured value and fail the
+  --   cocotb gate -- the hazard cannot land silently.
+  mem_proc : process (clk)
+  begin
+    if rising_edge(clk) then
+      -- ---- writes (top-level, we-gated; no reset on the array bodies) ----
+      if za_we  = '1' then za_mem(za_waddr)  <= za_wdata;  end if;
+      if zpa_we = '1' then zpa_mem(za_waddr) <= zpa_wdata; end if;
+      if chs_we = '1' then chs_mem(chs_waddr) <= chs_wdata; end if;
+      if ca_we  = '1' then ca_mem(ca_waddr)   <= ca_wdata;  end if;
+      if ce_we  = '1' then ce_mem(ce_waddr)   <= ce_wdata;  end if;
+      if xpa_we = '1' then xpa_body(xpa_waddr) <= xpa_wdata; end if;
+      if xpe_we = '1' then xpe_body(xpe_waddr) <= xpe_wdata; end if;
+
+      -- ---- registered reads (synchronous; data appears next edge) ----
+      za_rd      <= za_mem(za_raddr);
+      zpa_rd     <= zpa_mem(zpa_raddr);
+      chs_rd     <= chs_mem(chs_raddr);
+      ca_rd      <= ca_mem(ca_raddr);
+      ce_rd      <= ce_mem(ce_raddr);
+      xpa_rd     <= xpa_body(xpa_raddr);
+      xpe_rd     <= xpe_body(xpe_raddr);
+    end if;
+  end process;
+
+  -- ======================================================================
+  -- COMBINATIONAL read-address generation. Each *_raddr is a pure
+  -- combinational function of the FSM state and its registered lead
+  -- counter(s). This is the crux of the proven TX recipe: the read address
+  -- fed to mem_proc is the FSM's registered counter DIRECTLY (one register on
+  -- the address path), so the registered read yields data exactly one cycle
+  -- later. (An intermediate REGISTERED *_raddr would add a second register and
+  -- desynchronise the consume by one beat.) The lead counter `rd_idx` presents
+  -- the address for the word consumed on the NEXT beat; the capture/PI/out
+  -- phases present the reverse / interleave / output index. Addresses are
+  -- clamped to the body range [0, K_MAX-1]; out-of-body (termination) feed
+  -- beats ignore the read (they use the term registers), so a clamped stale
+  -- read is harmless.
+  read_addr_comb : process (st, rd_idx, cap_idx, qi_pi, pi_k, Kr, Nr)
+    variable a : integer range 0 to K_MAX-1;
+  begin
+    -- defaults: hold index 0 (harmless; the consuming phase overrides).
+    za_raddr  <= 0;
+    zpa_raddr <= 0;
+    chs_raddr <= 0;
+    ca_raddr  <= 0;
+    ce_raddr  <= 0;
+    xpa_raddr <= 0;
+    xpe_raddr <= 0;
+    case st is
+      -- UPPER feed: present ca/chs/za at the lead index rd_idx (clamped to the
+      -- body). The capture (chs) read is presented separately below once the
+      -- feed has finished (feed and capture are temporally disjoint).
+      when S_UP_DEC =>
+        if rd_idx < Kr then
+          a := rd_idx;
+        else
+          a := 0;
+        end if;
+        ca_raddr  <= a;
+        za_raddr  <= a;
+        -- chs is time-shared: feed lead while feeding, capture reverse index
+        -- once the core is emitting (rd_idx has run past the body).
+        if rd_idx <= Nr then
+          chs_raddr <= a;            -- feed phase lead
+        end if;
+        if cap_idx < Kr then
+          chs_raddr <= cap_idx;      -- capture phase (disjoint in time)
+        end if;
+      -- LOWER PI1 interleave read: ce at the interleaver index pi.
+      when S_LO_PI1 =>
+        if to_integer(unsigned(qi_pi)) < K_MAX then
+          ce_raddr <= to_integer(unsigned(qi_pi));
+        end if;
+      -- LOWER feed: present xpa/zpa at the lead index rd_idx.
+      when S_LO_PRIME | S_LO_DEC =>
+        if rd_idx < Kr then
+          a := rd_idx;
+        else
+          a := 0;
+        end if;
+        xpa_raddr <= a;
+        zpa_raddr <= a;
+      -- LOWER PI2 scatter read: xpe at the forward pi-stream index pi_k.
+      when S_LO_PI2 =>
+        if pi_k < Kr then
+          xpe_raddr <= pi_k;
+        end if;
+      -- FINAL decision: ca/ce at the lead index rd_idx.
+      when S_OUT_PRIME | S_OUT =>
+        if rd_idx < Kr then
+          a := rd_idx;
+        else
+          a := 0;
+        end if;
+        ca_raddr <= a;
+        ce_raddr <= a;
+      when others =>
+        null;
+    end case;
+  end process;
+
   process (clk)
     variable pi_idx  : integer;
     variable acc     : integer;
@@ -333,6 +603,15 @@ begin
       ov          <= '0';
       ol          <= '0';
       dn          <= '0';
+      -- Memory write-enables default low every cycle; a state asserts them
+      -- only when it actually writes (so mem_proc performs no spurious write).
+      za_we  <= '0';
+      zpa_we <= '0';
+      chs_we <= '0';
+      ca_we  <= '0';
+      ce_we  <= '0';
+      xpa_we <= '0';
+      xpe_we <= '0';
 
       if rst = '1' then
         st  <= S_IDLE;
@@ -369,60 +648,89 @@ begin
           -- W_in == sat_clip of the W_ext code to W_in, since the W_ext round
           -- never saturates these LLRs). So clip every parity/termination
           -- store to [IN_MIN,IN_MAX] here; ch_sys keeps the W_EXT clip.
+          -- Writes are LIFTED to mem_proc: drive the write port (we/addr/data)
+          -- here, mem_proc commits the word. chs/za/zpa share the column write
+          -- address (za_waddr) for the BODY (indices 0..K-1); the per-row
+          -- write-enables select which array updates this beat. The 3 z_a /
+          -- z'_a TERMINATION words (indices K..K+2) are kept in small register
+          -- arrays (za_termz / zpa_termz), NOT in the M4K body, because the
+          -- load de-mux writes two distinct termination indices in a single
+          -- beat (Kr+1 and Kr+2) which a 1-write-port M4K cannot do -- and they
+          -- are only 3 words. The feed read muxes body-M4K vs term-register.
           when S_LOAD_D =>
             if da_valid = '1' then
               if lcol < Kr then
-                -- body column
-                chs_mem(lcol) <= sat_clip(to_integer(signed(da1_in)),
-                                          EXT_MIN, EXT_MAX);
-                za_mem(lcol)  <= sat_clip(to_integer(signed(da2_in)),
-                                          IN_MIN, IN_MAX);
-                zpa_mem(lcol) <= sat_clip(to_integer(signed(da3_in)),
-                                          IN_MIN, IN_MAX);
+                -- body column: chs_mem[lcol]=da1, za_mem[lcol]=da2,
+                -- zpa_mem[lcol]=da3 -> all to the M4K bodies.
+                za_waddr  <= lcol;
+                chs_we    <= '1';
+                chs_waddr <= lcol;
+                chs_wdata <= sat_clip(to_integer(signed(da1_in)),
+                                      EXT_MIN, EXT_MAX);
+                za_we     <= '1';
+                za_wdata  <= sat_clip(to_integer(signed(da2_in)),
+                                      IN_MIN, IN_MAX);
+                zpa_we    <= '1';
+                zpa_wdata <= sat_clip(to_integer(signed(da3_in)),
+                                      IN_MIN, IN_MAX);
               elsif lcol = Kr then
                 -- termination column index 0 (== .m column K+1)
                 xa_term(0)    <= sat_clip(to_integer(signed(da1_in)),
                                           IN_MIN, IN_MAX);  -- x_a(K+1)
-                za_mem(Kr)    <= sat_clip(to_integer(signed(da2_in)),
+                za_termz(0)   <= sat_clip(to_integer(signed(da2_in)),
                                           IN_MIN, IN_MAX);  -- z_a(K+1)
                 xa_term(1)    <= sat_clip(to_integer(signed(da3_in)),
                                           IN_MIN, IN_MAX);  -- x_a(K+2)
               elsif lcol = Kr + 1 then
                 -- .m column K+2
-                za_mem(Kr+1)  <= sat_clip(to_integer(signed(da1_in)),
+                za_termz(1)   <= sat_clip(to_integer(signed(da1_in)),
                                           IN_MIN, IN_MAX);  -- z_a(K+2)
                 xa_term(2)    <= sat_clip(to_integer(signed(da2_in)),
                                           IN_MIN, IN_MAX);  -- x_a(K+3)
-                za_mem(Kr+2)  <= sat_clip(to_integer(signed(da3_in)),
+                za_termz(2)   <= sat_clip(to_integer(signed(da3_in)),
                                           IN_MIN, IN_MAX);  -- z_a(K+3)
               elsif lcol = Kr + 2 then
                 -- .m column K+3
                 xpa_term(0)   <= sat_clip(to_integer(signed(da1_in)),
                                           IN_MIN, IN_MAX);  -- x'_a(K+1)
-                zpa_mem(Kr)   <= sat_clip(to_integer(signed(da2_in)),
+                zpa_termz(0)  <= sat_clip(to_integer(signed(da2_in)),
                                           IN_MIN, IN_MAX);  -- z'_a(K+1)
                 xpa_term(1)   <= sat_clip(to_integer(signed(da3_in)),
                                           IN_MIN, IN_MAX);  -- x'_a(K+2)
               else
                 -- lcol = Kr + 3  (.m column K+4)
-                zpa_mem(Kr+1) <= sat_clip(to_integer(signed(da1_in)),
+                zpa_termz(1)  <= sat_clip(to_integer(signed(da1_in)),
                                           IN_MIN, IN_MAX);  -- z'_a(K+2)
                 xpa_term(2)   <= sat_clip(to_integer(signed(da2_in)),
                                           IN_MIN, IN_MAX);  -- x'_a(K+3)
-                zpa_mem(Kr+2) <= sat_clip(to_integer(signed(da3_in)),
+                zpa_termz(2)  <= sat_clip(to_integer(signed(da3_in)),
                                           IN_MIN, IN_MAX);  -- z'_a(K+3)
               end if;
 
               if lcol = Kr + 3 then
-                -- c_a = 0 init.
-                for k in 0 to K_MAX-1 loop
-                  ca_mem(k) <= 0;
-                end loop;
-                h_cnt <= 0;
-                st    <= S_ROM_START;
+                -- c_a = 0 init: re-sequenced to a one-write-per-cycle sweep in
+                -- S_CA_CLEAR so the single c_a write port maps to M4K (was a
+                -- broadside for-loop write nested in the FSM body).
+                clr_idx <= 0;
+                h_cnt   <= 0;
+                st      <= S_CA_CLEAR;
               else
                 lcol <= lcol + 1;
               end if;
+            end if;
+
+          -- c_a clearing sweep: ca_mem(k)<=0 for k=0..K-1, one per cycle.
+          -- First UPPER half reads ca_mem only after this completes, so the
+          -- body is fully zeroed before any read -> bit-exact with the old
+          -- broadside init.
+          when S_CA_CLEAR =>
+            ca_we    <= '1';
+            ca_waddr <= clr_idx;
+            ca_wdata <= 0;
+            if clr_idx = Kr - 1 then
+              st <= S_ROM_START;
+            else
+              clr_idx <= clr_idx + 1;
             end if;
 
           -- ---- ROM lookup (K -> d0,step), done ONCE; result cached. ----
@@ -445,14 +753,17 @@ begin
               st      <= S_FINAL;
             else
               -- prepare core feed (both halves stream the core input from
-              -- index 0). Pulse cd_start now; feed begins next cycle.
+              -- index 0). Pulse cd_start now; the core idles in its S_LOAD
+              -- until cd_in_valid, so the extra prime beat before the first
+              -- in_valid is harmless.
               cd_start <= '1';
               feed_idx <= 0;
-              cap_idx  <= 0;
-              cap_seen <= '0';
+              cap_idx  <= Nr - 1;      -- reverse capture counter pre-loaded
+              cap_v_d  <= '0';
+              rd_idx   <= 0;           -- lead presents body index 0 in PRIME
               if (h_cnt mod 2) = 0 then
                 -- UPPER half: x_a body = sat_to_in(c_a + ch_sys), then term.
-                st <= S_UP_DEC;
+                st <= S_UP_PRIME;
               else
                 -- LOWER half: build x'_a body = c_e[pi] via the interleaver.
                 st <= S_LO_PI1_START;
@@ -460,44 +771,69 @@ begin
             end if;
 
           -- =================== UPPER half =============================
+          -- One-beat feed prime: read_addr_comb presents ca/chs/za at rd_idx=0
+          -- this cycle (the combinational address feeds mem_proc, whose
+          -- registered read yields word 0 next cycle, in the first S_UP_DEC
+          -- beat). Advance the lead so S_UP_DEC always has the word for the
+          -- index being consumed. No in_valid here (the core still waits).
+          when S_UP_PRIME =>
+            rd_idx <= 1;
+            st     <= S_UP_DEC;
+
           -- Feed the core: indices 0..K-1 = sat_to_in(c_a+ch_sys),
           -- indices K..K+2 = xa_term, paired with z_a[0..K+2].
           -- Capture x_e (reverse order), store c_e[k]=sat_to_ext(x_e[k]+ch_sys)
           -- for k<K (discard k>=K termination extrinsics).
+          -- M4K rework: ca/chs/za reads are REGISTERED via mem_proc with the
+          -- read ADDRESS driven COMBINATIONALLY (read_addr_comb) from rd_idx
+          -- (feed) / cap_idx (capture) -- ONE register on the address path, so
+          -- ca_rd/chs_rd/za_rd this cycle hold the words for feed_idx (the
+          -- address was presented as rd_idx the previous cycle, rd_idx leads
+          -- feed_idx by one). The 3 termination beats use xa_term/za_termz
+          -- registers directly. The capture chs read is time-shared (feed and
+          -- capture are temporally disjoint: the core loads N, forwards N, then
+          -- back-emits N). The capture pipelines the reverse index + x_e by one
+          -- (cap_idx_d/cd_xe_d/cap_v_d) so the ce write lands the registered
+          -- chs read of the matching index.
           when S_UP_DEC =>
-            -- drive the core load stream
+            -- ----- feed: consume the registered word for feed_idx, advance.
             if feed_idx < Nr then
               if feed_idx < Kr then
-                acc  := sat_add(ca_mem(feed_idx), chs_mem(feed_idx),
-                                ACC_MIN, ACC_MAX);
+                acc  := sat_add(ca_rd, chs_rd, ACC_MIN, ACC_MAX);
                 xa_v := sat_clip(acc, IN_MIN, IN_MAX);
+                za_v := za_rd;
               else
                 xa_v := xa_term(feed_idx - Kr);
+                za_v := za_termz(feed_idx - Kr);
               end if;
-              za_v := za_mem(feed_idx);
               cd_xa       <= std_logic_vector(to_signed(xa_v, W_IN));
               cd_za       <= std_logic_vector(to_signed(za_v, W_IN));
               cd_in_valid <= '1';
               feed_idx    <= feed_idx + 1;
+              if rd_idx < Nr then
+                rd_idx <= rd_idx + 1;   -- advance the lead (addr for next beat)
+              end if;
             end if;
-            -- capture the reverse-order extrinsic stream
+            -- ----- capture: address chs at the reverse index cap_idx
+            -- (combinational), pipeline the index + x_e one cycle; the ce write
+            -- lands when the registered chs_rd for that index is valid.
+            cap_v_d <= '0';
             if cd_out_valid = '1' then
-              if cap_seen = '0' then
-                cap_idx  <= Nr - 1;          -- first emitted index = N-1
-                cap_seen <= '1';
-                if (Nr - 1) < Kr then
-                  acc := sat_add(to_integer(signed(cd_xe)),
-                                 chs_mem(Nr-1), ACC_MIN, ACC_MAX);
-                  ce_mem(Nr-1) <= sat_clip(acc, EXT_MIN, EXT_MAX);
-                end if;
-              else
-                if (cap_idx - 1) < Kr then
-                  acc := sat_add(to_integer(signed(cd_xe)),
-                                 chs_mem(cap_idx-1), ACC_MIN, ACC_MAX);
-                  ce_mem(cap_idx-1) <= sat_clip(acc, EXT_MIN, EXT_MAX);
-                end if;
+              cap_idx_d <= cap_idx;
+              cd_xe_d   <= to_integer(signed(cd_xe));
+              if cap_idx < Kr then
+                cap_v_d <= '1';         -- body index -> ce write next cycle
+              end if;
+              if cap_idx > 0 then
                 cap_idx <= cap_idx - 1;
               end if;
+            end if;
+            -- registered chs_rd for cap_idx_d is valid now; commit ce.
+            if cap_v_d = '1' then
+              acc := sat_add(cd_xe_d, chs_rd, ACC_MIN, ACC_MAX);
+              ce_we    <= '1';
+              ce_waddr <= cap_idx_d;
+              ce_wdata <= sat_clip(acc, EXT_MIN, EXT_MAX);
             end if;
             if cd_done = '1' then
               h_cnt <= h_cnt + 1;
@@ -507,54 +843,88 @@ begin
           -- =================== LOWER half =============================
           -- PI1 (S_LO_ILV): gather x'_a body = c_e[pi[k]] into xpa_body
           -- (forward k order). Pulse qi_start, then consume the pi stream.
+          -- M4K rework: ce_mem(pi_idx) read is REGISTERED, so the xpa_body
+          -- write for pi_k lands one cycle after qi_pi is valid (pi_*_d
+          -- pipeline tracks the delayed pi-stream index). The interleaver
+          -- holds qi_valid for K consecutive beats; the trailing pipeline beat
+          -- writes the final (pi_k=K-1) entry after qi_last.
           when S_LO_PI1_START =>
             qi_start <= '1';          -- d0c/stepc cached from S_ROM_WAIT
             pi_k     <= 0;
+            pi_v_d   <= '0';
             st       <= S_LO_PI1;
 
           when S_LO_PI1 =>
+            -- Stage 1: read_addr_comb presents ce_raddr = qi_pi this cycle;
+            -- pipeline the forward index pi_k + valid by one beat.
+            pi_v_d <= '0';
             if qi_valid = '1' then
-              pi_idx := to_integer(unsigned(qi_pi));
-              -- x'_a[pi_k] core-input body = c_e[pi_idx], re-quantized to W_IN.
-              xpa_body(pi_k) <= sat_clip(ce_mem(pi_idx), IN_MIN, IN_MAX);
+              pi_k_d   <= pi_k;
+              pi_v_d   <= '1';
               if qi_last = '1' then
-                cd_start <= '1';      -- start the lower core run
-                feed_idx <= 0;
-                cap_idx  <= 0;
-                cap_seen <= '0';
-                st       <= S_LO_DEC;
+                pi_k <= pi_k;            -- hold; last index captured below
               else
                 pi_k <= pi_k + 1;
               end if;
             end if;
+            -- Stage 2: ce_rd for the pi presented last cycle is valid now;
+            -- write the forward-order x'_a body entry pi_k_d.
+            if pi_v_d = '1' then
+              xpa_we    <= '1';
+              xpa_waddr <= pi_k_d;
+              xpa_wdata <= sat_clip(ce_rd, IN_MIN, IN_MAX);
+              if pi_k_d = Kr - 1 then
+                -- final body entry written this cycle: start the lower core
+                -- and move to the prime beat (which presents the feed read
+                -- address for index 0). cd_start can lead the first in_valid by
+                -- an extra cycle harmlessly -- the core just waits in S_LOAD.
+                cd_start <= '1';
+                feed_idx <= 0;
+                cap_idx  <= Nr - 1;      -- reverse capture counter pre-loaded
+                cap_v_d  <= '0';
+                rd_idx   <= 0;           -- prime presents body index 0
+                st        <= S_LO_PRIME;
+              end if;
+            end if;
+
+          -- One-beat feed prime: read_addr_comb presents xpa/zpa at rd_idx=0
+          -- this cycle; the registered read yields word 0 next cycle, in the
+          -- first S_LO_DEC beat. (xpa_body was fully written in S_LO_PI1.)
+          when S_LO_PRIME =>
+            rd_idx <= 1;
+            st     <= S_LO_DEC;
 
           -- LOWER core run: feed x'_a body (0..K-1) + xpa_term, z'_a;
           -- capture x'_e (reverse order) into xpe_body[k]=sat_to_ext(x'_e[k]).
+          -- M4K rework: xpa/zpa reads registered via mem_proc with COMBINATIONAL
+          -- addresses (read_addr_comb, rd_idx lead, like UPPER); the capture
+          -- write of xpe_body is direct (no read dependency, so it commits the
+          -- same beat as cd_out_valid, reverse index cap_idx).
           when S_LO_DEC =>
             if feed_idx < Nr then
               if feed_idx < Kr then
-                xa_v := sat_clip(xpa_body(feed_idx), IN_MIN, IN_MAX);
+                xa_v := sat_clip(xpa_rd, IN_MIN, IN_MAX);
+                za_v := zpa_rd;
               else
                 xa_v := xpa_term(feed_idx - Kr);
+                za_v := zpa_termz(feed_idx - Kr);
               end if;
-              za_v := zpa_mem(feed_idx);
               cd_xa       <= std_logic_vector(to_signed(xa_v, W_IN));
               cd_za       <= std_logic_vector(to_signed(za_v, W_IN));
               cd_in_valid <= '1';
               feed_idx    <= feed_idx + 1;
+              if rd_idx < Nr then
+                rd_idx <= rd_idx + 1;
+              end if;
             end if;
             if cd_out_valid = '1' then
               xe_code := to_integer(signed(cd_xe));
-              if cap_seen = '0' then
-                cap_idx  <= Nr - 1;
-                cap_seen <= '1';
-                if (Nr - 1) < Kr then
-                  xpe_body(Nr-1) <= sat_clip(xe_code, EXT_MIN, EXT_MAX);
-                end if;
-              else
-                if (cap_idx - 1) < Kr then
-                  xpe_body(cap_idx-1) <= sat_clip(xe_code, EXT_MIN, EXT_MAX);
-                end if;
+              if cap_idx < Kr then
+                xpe_we    <= '1';
+                xpe_waddr <= cap_idx;
+                xpe_wdata <= sat_clip(xe_code, EXT_MIN, EXT_MAX);
+              end if;
+              if cap_idx > 0 then
                 cap_idx <= cap_idx - 1;
               end if;
             end if;
@@ -564,38 +934,75 @@ begin
             end if;
 
           -- PI2 (S_LO_DILV): regenerate pi, scatter c_a[pi[k]] = xpe_body[k].
+          -- M4K rework: xpe_body(pi_k) read is REGISTERED, so the ca_mem
+          -- scatter write at pi_idx lands one cycle after qi_pi is valid. The
+          -- delayed pi index (pi_idx_d) is the scatter write address. This is
+          -- the ca_mem WRITE phase -- disjoint from every ca_mem READ phase
+          -- (see mem_proc), so no read-during-write hazard.
           when S_LO_PI2_START =>
             qi_start <= '1';          -- d0c/stepc still cached
             pi_k     <= 0;
+            pi_v_d   <= '0';
             st       <= S_LO_PI2;
 
           when S_LO_PI2 =>
+            -- Stage 1: read_addr_comb presents xpe_raddr = pi_k this cycle;
+            -- pipeline the scatter destination pi_idx and the last-beat flag.
+            pi_v_d    <= '0';
+            pi_last_d <= '0';
             if qi_valid = '1' then
               pi_idx := to_integer(unsigned(qi_pi));
-              ca_mem(pi_idx) <= xpe_body(pi_k);   -- already W_EXT-clipped
+              pi_idx_d  <= pi_idx;       -- scatter destination (delayed)
+              pi_v_d    <= '1';
               if qi_last = '1' then
-                h_cnt <= h_cnt + 1;
-                st    <= S_HALF_DISPATCH;
+                pi_last_d <= '1';        -- final scatter pipelined
+                pi_k <= pi_k;
               else
                 pi_k <= pi_k + 1;
+              end if;
+            end if;
+            -- Stage 2: xpe_rd for pi_k (presented last cycle) is valid now;
+            -- scatter it into c_a at the delayed interleave index.
+            if pi_v_d = '1' then
+              ca_we    <= '1';
+              ca_waddr <= pi_idx_d;
+              ca_wdata <= xpe_rd;        -- already W_EXT-clipped
+              if pi_last_d = '1' then
+                -- final scatter committed this cycle: advance the half.
+                h_cnt <= h_cnt + 1;
+                st    <= S_HALF_DISPATCH;
               end if;
             end if;
 
           -- =================== FINISH ================================
           when S_FINAL =>
             out_idx <= 0;
-            st      <= S_OUT;
+            rd_idx  <= 0;            -- prime presents body index 0 next state
+            st      <= S_OUT_PRIME;
+
+          -- One-beat prime: read_addr_comb presents ca/ce at rd_idx=0 this
+          -- cycle so the first S_OUT beat (out_idx=0) sees valid ca_rd/ce_rd.
+          when S_OUT_PRIME =>
+            rd_idx <= 1;
+            st     <= S_OUT;
 
           -- Stream K hard bits c[k] = (c_a[k] + c_e[k]) < 0, c[0] first.
+          -- M4K rework: ca/ce reads registered via mem_proc with COMBINATIONAL
+          -- addresses (read_addr_comb, rd_idx lead). ca_rd/ce_rd this cycle hold
+          -- the words for out_idx (addressed as rd_idx the previous cycle); the
+          -- decision/streaming is otherwise unchanged.
           when S_OUT =>
-            acc := sat_add(ca_mem(out_idx), ce_mem(out_idx),
-                           ACC_MIN, ACC_MAX);
+            acc := sat_add(ca_rd, ce_rd, ACC_MIN, ACC_MAX);
             if acc < 0 then
               cbit <= '1';
             else
               cbit <= '0';
             end if;
             ov <= '1';
+            -- advance the lead (read_addr_comb presents ca/ce at rd_idx).
+            if rd_idx < Kr then
+              rd_idx <= rd_idx + 1;
+            end if;
             if out_idx = Kr - 1 then
               ol <= '1';
               st <= S_DONE;
