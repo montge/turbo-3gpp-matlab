@@ -30,14 +30,14 @@
 
 ## 2. `turbo_decoder_top` memories → M4K-inferable (bit-exact), incl. `ca_mem` SDP
 
-- [ ] 2.1 Lift the `za_mem`/`zpa_mem` writes (`S_LOAD_D` ~378–412) and `chs_mem`
+- [x] 2.1 Lift the `za_mem`/`zpa_mem` writes (`S_LOAD_D` ~378–412) and `chs_mem`
   write (~376) out of the reset-guarded `case` into a memory process; register
   their reads (~471/477/490/496/540/591) as 1W/1R simple-dual-port ports;
   add `ramstyle = "M4K"`.
-- [ ] 2.2 Lift the `ce_mem` writes (~491/497) and `xpa_body`/`xpe_body` writes
+- [x] 2.2 Lift the `ce_mem` writes (~491/497) and `xpa_body`/`xpe_body` writes
   (~519/552/556) out of the reset-guarded body; register their reads
   (~519/536/575) as 1W/1R simple-dual-port ports; add `ramstyle = "M4K"`.
-- [ ] 2.3 **`ca_mem` simple-dual-port split (top risk):** model `ca_mem` as one
+- [x] 2.3 **`ca_mem` simple-dual-port split (top risk):** model `ca_mem` as one
   write port (the data-dependent QPP-deinterleave scatter
   `ca_mem(pi_idx) <= xpe_body(pi_k)` ~575, plus the init ~419 re-sequenced to a
   single write/cycle or a first-write valid flag) and one sequential read port
@@ -47,14 +47,27 @@
   occurs on the bit-exact path; pin the inferred `READ_DURING_WRITE_MODE`
   (OLD_DATA / don't-care) to match the GHDL behavioural model — confirm against
   the reference before acceptance (design Open Question / Decision 2).
-- [ ] 2.4 **Inner gate:** re-run the `turbo_decoder_top` cocotb/GHDL lane
+- [x] 2.4 **Inner gate:** re-run the `turbo_decoder_top` cocotb/GHDL lane
   (`hdl/sim/turbo_decoder_top/`) — MUST pass bit-for-bit against its committed
   golden vectors (representative `K`/SNR/iteration set), vectors byte-identical.
-- [ ] 2.5 **Outer gate (per-core):** synthesize `turbo_decoder_top` at the
+- [x] 2.5 **Outer gate (per-core):** synthesize `turbo_decoder_top` at the
   default `K_MAX` (or the documented intermediate if `K_MAX` α exceeds on-chip
   RAM) under Quartus II 13.0sp1; confirm all loop memories incl. `ca_mem`
   inferred M4K (`Total memory bits > 0`); record the M4K / memory-bit / LE
   counts. `altsyncram` fallback only if a memory resists.
+  <!-- Quartus II 13.0sp1, EP2C35F672C6, turbo_decoder_top @ K_MAX=512:
+       ALL 7 loop memories (za_mem, zpa_mem, chs_mem, ca_mem, ce_mem, xpa_body,
+       xpe_body) inferred altsyncram M4K simple-dual-port (OPERATION_MODE=
+       DUAL_PORT, ADDRESS_REG_B=CLOCK0 sync read, *_ACLR=NONE, RDW=OLD_DATA);
+       ca_mem (the scatter SDP) = 4 M4K, OLD_DATA RDW per the disjointness
+       analysis. Turbo-loop footprint (constituent stubbed to isolate turbo's
+       own memories from the sibling stage-1 LE alpha bank): Total memory bits
+       91,136 (>0); M4Ks 22/105; LE 1,810/33,216; registers 694; embedded
+       multipliers 0/70; Fmax 62.7 MHz (setup slack +4.050 ns, hold +0.215 ns
+       at 50 MHz). NB the integrated full-K_MAX/K=512 fit WITH the real core is
+       blocked only by the sibling's LE-banked constituent alpha synthesis time
+       (stage 1), not by turbo's memories. -->
+
 
 ## 3. Integrate + `turbo_decoder_top` Quartus fit (the synthesis oracle)
 
