@@ -50,22 +50,22 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 3. RTL: `de_rate_matching_top` + `rx_chain_top`
 
-- [ ] 3.1 Add `hdl/rtl/de_rate_matching_top.vhdl`: inverse circular-buffer
+- [x] 3.1 Add `hdl/rtl/de_rate_matching_top.vhdl`: inverse circular-buffer
   **soft-combine** (mirror the `circular_buffer.vhdl` `k_0`/`N_cb`/dummy-skip
   divider-free recurrence `S_QCALC`/`S_K0MOD`/running `pos`, with a saturating
   read-modify-write `w_soft[pos] += e_soft[k]` into a banked soft `w` RAM
   sys/ev/od) — author as a standalone `de_circular_buffer` sibling or a mode flag
   (design.md open question; recommend standalone, leaving the TX
   `circular_buffer` UNTOUCHED).
-- [ ] 3.2 Inverse subblock-interleave (×3): split soft `w` into the 3 sub-blocks
+- [x] 3.2 Inverse subblock-interleave (×3): split soft `w` into the 3 sub-blocks
   (sys/ev/od bank read), reuse the **UNMODIFIED `subblock_interleaver`** address+
   filler generator, and **scatter** `d_soft[d-index] = subblock_soft[pos]` for
   non-filler positions; drop the subblock pad positions.
-- [ ] 3.3 Filler / erasure / output: map `d_a(1:2, 1:F_r)` → `MAX_SENT` (`+inf`),
+- [x] 3.3 Filler / erasure / output: map `d_a(1:2, 1:F_r)` → `MAX_SENT` (`+inf`),
   leave untransmitted positions `0`, **saturate** every `d_a` word W_DRM → W_EXT,
   and stream the `3×(K+4)` matrix column-major (`da_valid`/`da{1,2,3}` W_EXT) in
   the decoder's exact load order.
-- [ ] 3.4 Add `hdl/rtl/rx_chain_top.vhdl`: wire `de_rate_matching_top` →
+- [x] 3.4 Add `hdl/rtl/rx_chain_top.vhdl`: wire `de_rate_matching_top` →
   **`turbo_decoder_top` (UNMODIFIED)** with a start-pulse FSM, mirroring
   `tx_chain_top` in reverse; expose K decoded hard bits with valid/last.
   K-agnostic (start latches `K`, `N_ref`, `I_LBRM`, `rv_idx`, `E`, `F_r`).
