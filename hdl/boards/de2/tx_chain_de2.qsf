@@ -29,6 +29,7 @@ set_global_assignment -name VHDL_FILE ../../rtl/circular_buffer.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/rate_matching_top.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/tx_chain_top.vhdl
 set_global_assignment -name VHDL_FILE ../hex7seg.vhdl
+set_global_assignment -name VHDL_FILE ../hd44780_lcd.vhdl
 set_global_assignment -name VHDL_FILE tx_chain_golden_pkg.vhdl
 set_global_assignment -name VHDL_FILE tx_chain_de2_top.vhdl
 set_global_assignment -name SDC_FILE tx_chain_de2.sdc
@@ -72,6 +73,27 @@ set_location_assignment PIN_Y22 -to HEX1[3]
 set_location_assignment PIN_AA24 -to HEX1[4]
 set_location_assignment PIN_AA23 -to HEX1[5]
 set_location_assignment PIN_AB24 -to HEX1[6]
+
+# --- 16x2 HD44780 character LCD (canonical Terasic DE2 user-manual pins) ---
+# ADDITIVE status display: line 1 = "3GPP TX K=40", line 2 = live status
+# (RUNNING + blink heartbeat -> PASS/FAIL). Driven by ../hd44780_lcd.vhdl at
+# CLK_HZ => 50_000_000. As with the CLOCK_50/KEY/LED/HEX pins, these are valid
+# DE2 package pins so fit/synthesis succeed, but they MUST be cross-checked
+# against the Terasic DE2 user manual before programming real hardware
+# (the gated stage-4 task).
+set_location_assignment PIN_J1 -to LCD_DATA[0]
+set_location_assignment PIN_J2 -to LCD_DATA[1]
+set_location_assignment PIN_H1 -to LCD_DATA[2]
+set_location_assignment PIN_H2 -to LCD_DATA[3]
+set_location_assignment PIN_J4 -to LCD_DATA[4]
+set_location_assignment PIN_J3 -to LCD_DATA[5]
+set_location_assignment PIN_H4 -to LCD_DATA[6]
+set_location_assignment PIN_H3 -to LCD_DATA[7]
+set_location_assignment PIN_K4 -to LCD_RW
+set_location_assignment PIN_K3 -to LCD_EN
+set_location_assignment PIN_K1 -to LCD_RS
+set_location_assignment PIN_L4 -to LCD_ON
+set_location_assignment PIN_K2 -to LCD_BLON
 
 set_global_assignment -name LAST_QUARTUS_VERSION "13.0 SP1"
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS_NO_OUTPUT_GND "AS INPUT TRI-STATED"
