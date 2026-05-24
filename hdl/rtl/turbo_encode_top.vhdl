@@ -15,14 +15,44 @@ use work.qpp_rom_pkg.all;
 -- SYNCHRONOUSLY (registered read output) on BOTH read ports -- buf(didx) and
 -- buf(pi_idx) -- instead of the original combinational (async) dual read, so
 -- it infers a Cyclone II M4K block RAM (simple dual-port: one write port plus
--- two registered read ports, the natural- and interleaved-order taps), WITHOUT
--- changing a single output bit (the turbo_encode_top / tx_chain_top cocotb
--- lanes stay bit-exact vs the committed golden vectors). The one-cycle read
--- latency is absorbed by a single S_ENC_PRIME prefetch beat: the read
--- addresses (didx / pi_idx) are presented one cycle ahead, their data is
--- registered into te_cbit/te_cpbit, and the encoder's data/term/emit schedule
--- runs one cycle behind the address generators -- so turbo_encoder samples the
--- same (c, c_prime) bit pair on the same relative beat as before.
+-- a registered read port), WITHOUT changing a single output bit (the
+-- turbo_encode_top / tx_chain_top cocotb lanes stay bit-exact vs the committed
+-- golden vectors). The one-cycle read latency is absorbed by a single
+-- S_ENC_PRIME prefetch beat: the read addresses (didx / pi_idx) are presented
+-- one cycle ahead, their data is registered into te_cbit/te_cpbit, and the
+-- encoder's data/term/emit schedule runs one cycle behind the address
+-- generators -- so turbo_encoder samples the same (c, c_prime) bit pair on the
+-- same relative beat as before.
+--
+-- M4K block-RAM inference rework (add-fpga-block-ram-inference, stage 3): at
+-- full MAXK=6144 the input buffer must infer M4K, not LE register fabric.
+-- Quartus II 13.0sp1 was empirically shown to FAIL inference (Total memory
+-- bits : 0) when the array write lives inside the reset-guarded FSM body
+-- (if rst='1' ... else case st ... when S_LOAD). Two fixes applied here,
+-- bit-exact (cocotb gate green, turbo_encoder.csv + tx_chain.csv unchanged):
+--   (a) LIFT the write out of the reset/case nest into a dedicated,
+--       unconditional clocked memory process; the FSM drives only the write
+--       address (widx) / write-enable (buf_we) / write-data (buf_wd) and the
+--       read addresses (didx / pi_idx) -- never the arrays directly.
+--   (b) SPLIT buf into two IDENTICAL simple-dual-port copies -- buf_a read by
+--       didx (natural order), buf_b read by pi_idx (interleaved order) --
+--       each written with the SAME data/address every load. M4K is at most
+--       dual-port, so 1 write + 2 reads (3 ports) cannot share one block; two
+--       1W/1R copies each map cleanly to an M4K. The copies hold identical
+--       contents so both reads return the same bit a single-array read would.
+-- Each array carries ramstyle="M4K"; the := (others=>'0') power-up init and
+-- absence of any async clear on the array body are preserved (both tolerated
+-- by the M4K template). The bit-exact path never reads an address in the same
+-- cycle it is written (load completes before the read phase), so the inferred
+-- READ_DURING_WRITE_MODE is don't-care.
+--
+-- Verified (Quartus II 13.0sp1, EP2C35F672C6, MAXK=6144 default): buf_a/buf_b
+-- each infer altsyncram simple-dual-port M4K. Standalone before -> after:
+-- Total memory bits 0 -> 16,384, 4 M4K (2 per copy), 15,619 -> 744 LE, Fmax
+-- 71.51 -> 117.38 MHz. Integrated full-K=6144 tx_chain_top fit (stage 4): the
+-- whole chain fits the EP2C35 -- 22/105 M4K, 90,112 memory bits, 1,716/33,216
+-- LE, 605 registers, Fmax 89.33 MHz on CLOCK_50 (was ~85k LE = did not fit).
+-- All 14 cocotb/GHDL lanes PASS bit-exact; golden vectors byte-identical.
 --
 -- FSM control signals are otherwise combinational (Mealy) so the clocked
 -- sub-cores sample them aligned, exactly reproducing the stimulus that
@@ -90,12 +120,30 @@ architecture rtl of turbo_encode_top is
     );
   end component;
 
+  -- Two identical simple-dual-port copies of the input block buffer: buf_a is
+  -- read by the natural-order tap (didx), buf_b by the interleaved-order tap
+  -- (pi_idx). Both are written with the SAME data/address on every load, so
+  -- they hold identical contents. Splitting the 1-write/2-read array into two
+  -- 1W/1R copies lets each infer a Cyclone II M4K (an M4K is at most
+  -- dual-port). ramstyle="M4K" asserts the intent so a future refactor that
+  -- re-buries a write fails loudly rather than silently reverting to LE.
   type buf_t is array (0 to MAXK-1) of std_logic;
-  signal buf : buf_t := (others => '0');
+  signal buf_a : buf_t := (others => '0');
+  signal buf_b : buf_t := (others => '0');
+  attribute ramstyle : string;
+  attribute ramstyle of buf_a : signal is "M4K";
+  attribute ramstyle of buf_b : signal is "M4K";
+
+  -- Write port shared by both copies, driven (combinationally) by the FSM and
+  -- consumed by the unconditional memory process: write-enable / write-data.
+  -- The write address is widx (already an FSM register).
+  signal buf_we : std_logic := '0';
+  signal buf_wd : std_logic := '0';
 
   -- Synchronous-read registers for the two read ports of buf (registered read
-  -- output -> M4K simple-dual-port). cbit_r/cpbit_r hold buf(didx)/buf(pi_idx)
-  -- for the addresses presented (combinationally) on the previous clock edge.
+  -- output -> M4K simple-dual-port). cbit_r/cpbit_r hold buf_a(didx)/
+  -- buf_b(pi_idx) for the addresses presented (combinationally) on the
+  -- previous clock edge.
   signal cbit_r, cpbit_r : std_logic := '0';
 
   type state_t is (S_IDLE, S_LOAD, S_ROMSTART, S_LOOKUP, S_ENC_START,
@@ -143,6 +191,12 @@ begin
   pi_idx <= to_integer(unsigned(qi_pi));
 
   -- Combinational FSM control (Mealy).
+  -- Buffer write port: enabled only while loading a code bit. The write itself
+  -- is performed by the unconditional memory process below (lifted out of the
+  -- reset-guarded FSM body so the M4K write-port template is met); the FSM
+  -- owns only this enable/data and the write address (widx).
+  buf_we      <= '1' when (st = S_LOAD and c_in_valid = '1') else '0';
+  buf_wd      <= c_in;
   rom_start   <= '1' when st = S_ROMSTART  else '0';
   qi_start    <= '1' when st = S_ENC_START else '0';
   te_rst      <= '1' when (rst = '1' or st = S_ENC_START) else '0';
@@ -163,16 +217,28 @@ begin
                else '0';
   busy      <= '0' when (st = S_IDLE or st = S_DONE) else '1';
 
+  -- Dedicated, UNCONDITIONAL memory process (no reset on the array body, write
+  -- at the top level of the clocked process) so each copy meets the Quartus
+  -- 13.0sp1 M4K write-port template. One write port (widx/buf_we/buf_wd) feeds
+  -- both copies identically; each copy has one registered read port. The
+  -- registered read output for the addresses presented at this edge (didx /
+  -- pi_idx) appears next edge (M4K simple-dual-port). The encoder consumes
+  -- these one beat later, in S_ENC_DATA.
   process (clk)
   begin
     if rising_edge(clk) then
-      -- Synchronous read of both buf ports: the read output is registered, so
-      -- the data for the addresses presented at this edge (didx / pi_idx)
-      -- appears next edge (M4K simple-dual-port). The encoder consumes these
-      -- one beat later, in S_ENC_DATA.
-      cbit_r  <= buf(didx);
-      cpbit_r <= buf(pi_idx);
+      if buf_we = '1' then
+        buf_a(widx) <= buf_wd;
+        buf_b(widx) <= buf_wd;
+      end if;
+      cbit_r  <= buf_a(didx);
+      cpbit_r <= buf_b(pi_idx);
+    end if;
+  end process;
 
+  process (clk)
+  begin
+    if rising_edge(clk) then
       if rst = '1' then
         st <= S_IDLE;
       else
@@ -186,7 +252,8 @@ begin
 
           when S_LOAD =>
             if c_in_valid = '1' then
-              buf(widx) <= c_in;
+              -- Write is performed by the memory process (buf_we/buf_wd above);
+              -- the FSM advances only the write address and state here.
               if widx = to_integer(Kr) - 1 then
                 st <= S_ROMSTART;
               else

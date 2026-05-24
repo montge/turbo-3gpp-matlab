@@ -90,6 +90,48 @@ C:\altera\13.0sp1\quartus\bin64\quartus_sh --flow compile tx_chain_de2
 Produces `output_files/tx_chain_de2.sof` (gitignored). Expect ~12 of 105 M4K
 blocks, 0 multipliers, and Fmax ≥ 50 MHz on the `CLOCK_50` domain.
 
+## Full-`K`=6144 synthesis-oracle fit (block-RAM inference proof)
+
+The K=40 demo above only fits because its buffer depths are parameterized
+*down* (`MAXK=64`, `DMAX=64`, `KW_MAX=256`) so they fit as LE register fabric.
+The real test is whether the **full-size** chain (`tx_chain_top` at its default
+TS36.212 maxima `MAXK=6144`, `DMAX=6148`, `KW_MAX=18528`) fits the EP2C35 —
+which it does **only because** the three TX buffers now infer Cyclone II M4K
+block RAM (`add-fpga-block-ram-inference`, integrates #45/#46/#47).
+
+This is verified with a minimal synthesis harness — `tx_chain_fullk_synth_top`
+— that instantiates `tx_chain_top` at its default generics and folds its
+ports to pins so nothing is optimized away. Compiled in a scratch dir under
+Quartus II 13.0sp1 (`EP2C35F672C6`, VHDL-2008, 50 MHz `CLOCK_50`); the build
+artifacts are not committed.
+
+**Before → after (the inference fix headline):**
+
+| Metric | Before (as LE logic) | After (M4K inferred) |
+|--------|----------------------|----------------------|
+| Total memory bits | `0` | `90,112 / 483,840` (19%) |
+| M4K block RAM | `0 / 105` | `22 / 105` (21%) |
+| Total logic elements | ~85,000 (2.5× over device — **did not fit**) | `1,716 / 33,216` (5%) — **fits** |
+| Dedicated registers | (huge buffer flop banks) | `605` |
+| Embedded multipliers | — | `2 / 70` (3%) — see note |
+| Fmax (`CLOCK_50`) | — | **89.33 MHz** (setup slack +8.805 ns, hold +0.391 ns — **50 MHz closes**) |
+
+The 22 M4K decompose exactly as the per-core stage fits predicted:
+`circular_buffer` `w_sys`/`w_ev`/`w_od` = 12, `rate_matching_top`
+`d1`/`d2`/`d3buf` = 6, `turbo_encode_top` `buf_a`/`buf_b` (dual-copy) = 4. All
+inferred as `altsyncram` simple-dual-port (no explicit primitive / no fallback).
+
+> **Multiplier note.** At full `KW_MAX` the `circular_buffer` `N_cb`/`q` index
+> arithmetic synthesizes 2 embedded 9-bit multipliers (`lpm_mult`), which the
+> parameterized-down K=40 demo did not. They are unrelated to the M4K fix and
+> trivial (2 of 70 DSP); the design still fits with large headroom. The
+> divider-free `q`/`pos` recurrences are unchanged — this is the fitter mapping
+> a width-dependent multiply to a DSP at full size rather than to LEs.
+
+The functional bit-exactness gate is unchanged: all 14 cocotb/GHDL lanes PASS
+against the committed golden vectors (byte-identical) with the integrated M4K
+RTL.
+
 ## Program (stage 5 — requires the physical board)
 
 ```bash
