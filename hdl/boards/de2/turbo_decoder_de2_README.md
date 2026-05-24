@@ -153,6 +153,18 @@ The pin locations are copied **verbatim** from the verified `tx_chain_de2.qsf`
 demo, the pinout **must be cross-checked against the Terasic DE2 user manual
 before programming real hardware** (stage 4).
 
+#### On-board LCD result — CONFIRMED (2026-05-24)
+
+Confirmed on real hardware: the K=512 turbo decoder DE2 demo was re-programmed
+with the LCD build, and on `KEY[0]` the 16×2 HD44780 LCD shows line 1
+`3GPP TURBO K=512` and line 2 `RUNNING` with a flashing heartbeat star held
+~1.5 s (the minimum RUNNING-display window) before switching to `PASS`, with the
+heartbeat `*` blinking continuously throughout. `LEDG[0]` (green / PASS) and
+`HEX1 HEX0 = A5` remain present alongside, confirming the LCD is purely additive
+and changes no verdict. This satisfies the stage-4 on-board LCD read for the
+decoder demo (the canonical DE2 `LCD_*` pinout rendered correctly, so it needed
+no correction).
+
 ## Build (Quartus II 13.0sp1, no board needed)
 
 ```bash

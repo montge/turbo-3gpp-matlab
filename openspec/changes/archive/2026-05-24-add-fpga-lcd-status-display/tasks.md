@@ -77,13 +77,24 @@ vectors, and verdict logic stay UNMODIFIED throughout.
 
 ## 4. On-board program + visual confirmation (HARDWARE-GATED — user's board)
 
-- [ ] 4.1 Cross-check the LCD pin assignments against the Terasic DE2 user
-  manual; correct both `.qsf` files if needed.
-- [ ] 4.2 Program the decoder demo on the DE2 and visually confirm the LCD shows
+- [x] 4.1 Cross-check the LCD pin assignments against the Terasic DE2 user
+  manual; correct both `.qsf` files if needed. (Confirmed on the decoder demo —
+  the LCD rendered the label + status correctly on hardware, so the canonical
+  DE2 `LCD_*` pinout is right.)
+- [x] 4.2 Program the decoder demo on the DE2 and visually confirm the LCD shows
   the label line + `RUNNING` with a moving heartbeat → `PASS` (and that KEY0
   re-runs and the LCD updates). FAIL path optionally checked via a corrupt
   build.
-- [ ] 4.3 Program the TX demo and confirm the LCD likewise.
+  On-board result — CONFIRMED (2026-05-24): the K=512 turbo decoder DE2 demo was
+  re-programmed with the LCD build; on `KEY[0]` the 16×2 LCD shows line 1
+  `3GPP TURBO K=512`, line 2 `RUNNING` with a flashing heartbeat star held ~1.5 s
+  → `PASS`, heartbeat blinking continuously (LEDG[0] green / HEX `A5` still
+  present). User visually confirmed "I see the running now and a flashing star."
+- [ ] 4.3 Program the TX demo and confirm the LCD likewise. (Deferred — only the
+  decoder demo was re-programmed today; the TX demo on-board LCD read is still
+  the user's step. The decoder confirmation already exercises the shared
+  `hd44780_lcd` controller, the RUNNING-hold timer, and the always-on heartbeat
+  on real hardware.)
 
 ## 4b. Refinement — minimum RUNNING-display window + always-on heartbeat
 
