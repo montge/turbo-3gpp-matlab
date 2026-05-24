@@ -64,3 +64,23 @@ and read the two hex digits on `HEX1 HEX0`. Expected values are taken from
 
 A match confirms the on-board core agrees with the MATLAB/Octave golden
 model.
+
+## Other DE2 demos on this board
+
+This directory also hosts two larger self-checking 3GPP demos that report on
+the LEDs, the 7-seg, **and** the DE2's on-board 16x2 HD44780 character LCD:
+
+- **`tx_chain_de2`** (`tx_chain_de2_top`, K=40, 50 MHz) — see
+  `tx_chain_de2_README.md`.
+- **`turbo_decoder_de2`** (`turbo_decoder_de2_top`, K=512, 12.5 MHz PLL) — see
+  `turbo_decoder_de2_README.md`.
+
+Both drive the LCD via the shared `../hd44780_lcd.vhdl` controller (a board
+component, like `../hex7seg.vhdl`, referenced by each demo's `.qsf`; its
+`CLK_HZ` generic scales all HD44780 delays so one core serves both clocks). The
+LCD is **additive** — the LED/7-seg verdict is unchanged. It shows a fixed demo
+label on line 1 (so you know which demo is loaded) and a live status on line 2:
+`RUNNING` with a blinking two-glyph heartbeat (so a live run is visibly distinct
+from a hung one), resolving to `PASS` / `FAIL` when the on-chip self-check
+completes. The LCD pins are the canonical Terasic DE2 user-manual pins and must
+be cross-checked against the DE2 user manual before programming real hardware.

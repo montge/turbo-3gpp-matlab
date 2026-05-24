@@ -99,6 +99,7 @@ H=4 frame, by construction).
 | `LEDG[1]` | green LED | **RUNNING** (lit until a verdict is reached) |
 | `LEDR[1]` | red LED | **DONE** (lit once a verdict is reached) |
 | `HEX1 HEX0` | seven-segment (active low) | status code |
+| `LCD_*` | 16x2 HD44780 character LCD | human-readable status (additive) |
 
 Seven-segment status code (via the shared `hdl/boards/hex7seg.vhdl` nibble
 decoder, so glyphs are the hex set):
@@ -108,6 +109,34 @@ decoder, so glyphs are the hex set):
 | running | `0 0` |
 | **pass** | `A 5` |
 | **fail** | `F F` |
+
+### Character LCD (additive, human-readable status)
+
+The DE2's on-board 16x2 HD44780 character LCD is driven by the shared
+`hdl/boards/hd44780_lcd.vhdl` controller (instantiated with
+`CLK_HZ => 12_500_000`, the PLL-derived demo clock) **in addition to** the
+LED/7-seg verdict — the LEDs and `A5`/`FF` codes are unchanged. The LCD is
+driven from the **same** `pass_f`/`fail_f`/`done_f` flags (read only — no
+verdict-logic change), so it cannot affect the self-check result:
+
+| line | content |
+|------|---------|
+| line 1 | `3GPP TURBO K=512` (fixed demo label — tells you which demo is loaded) |
+| line 2, running | `RUNNING` + a two-glyph **blink heartbeat** (`**` toggling ~0.34 s off a free-running counter, so a live run is visibly distinct from a hung one) |
+| line 2, pass | `PASS` |
+| line 2, fail | `FAIL` |
+
+`KEY[0]` restarts the demo and re-runs the LCD init, so the display re-arms
+along with the LED/7-seg verdict. The HD44780 controller runs the documented
+cold-start (≥15 ms power-on wait → function-set 8-bit/2-line/5×8 → display-on →
+clear → entry-mode) then continuously refreshes both line buffers to DDRAM;
+every timing delay is counter-based and scaled from `CLK_HZ`, so one core serves
+both this 12.5 MHz demo and the 50 MHz TX demo. The LCD bus is write-only
+(`LCD_RW` tied `0`; fixed worst-case delays, no busy-flag read), and `LCD_ON`/
+`LCD_BLON` are driven `1`. The LCD pins are the **canonical Terasic DE2
+user-manual pins** (`LCD_DATA[7:0]`, `LCD_RW`, `LCD_EN`, `LCD_RS`, `LCD_ON`,
+`LCD_BLON`); like the other pins they **must be cross-checked against the DE2
+user manual before programming real hardware** (stage 4).
 
 The pin locations are copied **verbatim** from the verified `tx_chain_de2.qsf`
 (same DE2 board, same CLOCK_50 / KEY / LEDR / LEDG / HEX subset). As with the TX

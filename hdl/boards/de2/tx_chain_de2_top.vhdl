@@ -39,6 +39,12 @@ use work.tx_chain_golden_pkg.all;  -- GV_* on-chip golden vector (K=40 row)
 --   fail    -> HEX0 shows 0xF, HEX1 shows 0xF (=> "FF").
 -- (hex7seg is a pure nibble->seg decoder; richer glyphs would need a new
 -- decoder, which is out of scope — status nibble codes are sufficient.)
+--
+-- LCD_*: a 16x2 HD44780 character LCD is driven ADDITIVELY (the 7-seg/LEDs are
+-- unchanged). Line 1 = fixed demo label "3GPP TX K=40"; line 2 = live status
+-- decoded from the SAME pass/fail/done flags: "RUNNING" + a two-glyph blink
+-- heartbeat -> "PASS"/"FAIL" once a verdict latches. Driven by the shared
+-- hdl/boards/hd44780_lcd.vhdl with CLK_HZ => 50_000_000.
 entity tx_chain_de2_top is
   generic (
     -- TEST-ONLY fault-injection knob. Default -1 disables it, so the
@@ -53,7 +59,14 @@ entity tx_chain_de2_top is
     LEDR     : out std_logic_vector(1 downto 0);   -- LEDR[0]=FAIL, LEDR[1]=DONE
     LEDG     : out std_logic_vector(1 downto 0);   -- LEDG[0]=PASS, LEDG[1]=RUN
     HEX0     : out std_logic_vector(6 downto 0);
-    HEX1     : out std_logic_vector(6 downto 0)
+    HEX1     : out std_logic_vector(6 downto 0);
+    -- 16x2 HD44780 character LCD bus (additive status display).
+    LCD_DATA : out std_logic_vector(7 downto 0);   -- DB7..DB0
+    LCD_RW   : out std_logic;                       -- tied 0 (write-only)
+    LCD_EN   : out std_logic;                       -- E strobe
+    LCD_RS   : out std_logic;                       -- 0=command, 1=data
+    LCD_ON   : out std_logic;                       -- panel power (driven '1')
+    LCD_BLON : out std_logic                        -- backlight (driven '1')
   );
 end entity tx_chain_de2_top;
 
@@ -85,6 +98,25 @@ architecture rtl of tx_chain_de2_top is
     port (
       nibble_i : in  std_logic_vector(3 downto 0);
       seg_o    : out std_logic_vector(6 downto 0)
+    );
+  end component;
+
+  -- Shared HD44780 16x2 LCD controller (board component; CLK_HZ scales delays).
+  component hd44780_lcd is
+    generic (
+      CLK_HZ : integer := 50_000_000
+    );
+    port (
+      clk      : in  std_logic;
+      rst      : in  std_logic;
+      line1_i  : in  string(1 to 16);
+      line2_i  : in  string(1 to 16);
+      lcd_data : out std_logic_vector(7 downto 0);
+      lcd_rs   : out std_logic;
+      lcd_rw   : out std_logic;
+      lcd_en   : out std_logic;
+      lcd_on   : out std_logic;
+      lcd_blon : out std_logic
     );
   end component;
 
@@ -149,6 +181,14 @@ architecture rtl of tx_chain_de2_top is
   signal pass_f : std_logic := '0';
   signal fail_f : std_logic := '0';
   signal done_f : std_logic := '0';
+
+  -- Free-running heartbeat counter for the LCD liveness glyph. At 50 MHz,
+  -- bit 24 toggles every 2^24 / 50e6 ~ 0.34 s -> a clearly visible blink.
+  signal hb_cnt : unsigned(24 downto 0) := (others => '0');
+
+  -- LCD line buffers: line 1 fixed label, line 2 live status (combinational).
+  constant LCD_LABEL : string(1 to 16) := "3GPP TX K=40    ";
+  signal lcd_line2   : string(1 to 16);
 
   -- Expected bit at index i, with the TEST-ONLY corruption applied at
   -- CORRUPT_IDX (default -1 => never corrupts => returns the true golden bit).
@@ -323,4 +363,44 @@ begin
 
   u_hex0 : hex7seg port map (nibble_i => hex0_nib, seg_o => HEX0);
   u_hex1 : hex7seg port map (nibble_i => hex1_nib, seg_o => HEX1);
+
+  ---------------------------------------------------------------------------
+  -- LCD status display (ADDITIVE). The verdict path above is unchanged: this
+  -- only READS pass_f/fail_f/done_f. Line 1 is the fixed demo label; line 2 is
+  -- decoded combinationally from the same flags, with a blink heartbeat while
+  -- running so a live run is visibly distinct from a hung one.
+  ---------------------------------------------------------------------------
+  -- Free-running heartbeat counter (CLOCK_50).
+  process (CLOCK_50)
+  begin
+    if rising_edge(CLOCK_50) then
+      hb_cnt <= hb_cnt + 1;
+    end if;
+  end process;
+
+  -- Line 2: "PASS" / "FAIL" once done; else "RUNNING" + a two-glyph blink.
+  -- The heartbeat alternates between '*' and ' ' on hb_cnt(24) (~0.34 s) so the
+  -- run is visibly alive. All branches are exactly 16 chars (padded).
+  lcd_line2 <=
+    "PASS            " when pass_f = '1' else
+    "FAIL            " when fail_f = '1' else
+    "RUNNING **      " when hb_cnt(24) = '1' else
+    "RUNNING         ";
+
+  u_lcd : hd44780_lcd
+    generic map (
+      CLK_HZ => 50_000_000          -- the TX demo runs on the full CLOCK_50
+    )
+    port map (
+      clk      => CLOCK_50,
+      rst      => restart,           -- KEY0 restart re-runs the init
+      line1_i  => LCD_LABEL,
+      line2_i  => lcd_line2,
+      lcd_data => LCD_DATA,
+      lcd_rs   => LCD_RS,
+      lcd_rw   => LCD_RW,
+      lcd_en   => LCD_EN,
+      lcd_on   => LCD_ON,
+      lcd_blon => LCD_BLON
+    );
 end architecture rtl;
