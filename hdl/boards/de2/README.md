@@ -80,7 +80,11 @@ component, like `../hex7seg.vhdl`, referenced by each demo's `.qsf`; its
 `CLK_HZ` generic scales all HD44780 delays so one core serves both clocks). The
 LCD is **additive** — the LED/7-seg verdict is unchanged. It shows a fixed demo
 label on line 1 (so you know which demo is loaded) and a live status on line 2:
-`RUNNING` with a blinking two-glyph heartbeat (so a live run is visibly distinct
-from a hung one), resolving to `PASS` / `FAIL` when the on-chip self-check
-completes. The LCD pins are the canonical Terasic DE2 user-manual pins and must
+`RUNNING` with an always-on blinking heartbeat (`*`), resolving to `PASS` /
+`FAIL` when the on-chip self-check completes. Because the self-check latches its
+verdict in under 1 ms, the `RUNNING` *display* is deliberately **held a minimum
+~1.5 s** (a display-state timer sized as `(3 × CLK_HZ) / 2` cycles, reloaded on
+each `KEY[0]` start) so a human can actually see it; this gates only the LCD
+string, not the verdict/LED/7-seg path. The heartbeat `*` blinks in every state.
+The LCD pins are the canonical Terasic DE2 user-manual pins and must
 be cross-checked against the DE2 user manual before programming real hardware.
