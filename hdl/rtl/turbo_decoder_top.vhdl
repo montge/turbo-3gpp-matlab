@@ -209,6 +209,32 @@ architecture rtl of turbo_decoder_top is
   -- preserved. The one-cycle sync-read latency is absorbed inside the owning FSM
   -- (S_*_PRIME prime beats below), so the decoded bit stream is bit-identical to
   -- scripts/fixedpoint_turbo_decoder.m (cocotb gate: all K/max_iter bit-exact).
+  --
+  -- INTEGRATED K=512 FIT (stage 3 -- this core's M4K loop memories + the
+  -- constituent core's M4K alpha/xa/za, both reworked, synthesized together as
+  -- turbo_decoder_top with K_MAX=512 / N_MAX=515; Quartus II 13.0sp1,
+  -- EP2C35F672C6, VHDL_2008, 50 MHz):
+  --   * BEFORE (master, LE-banked): M4K = 0 (Total memory bits : 0), the
+  --       full-block alpha/LLR/extrinsic stores were huge LE register banks --
+  --       the inference blocker; did not fit as a board target.
+  --   * AFTER (integrated): FITS. Logic = 10,978 LE / 33,216 (33%); M4K = 57 /
+  --       105 (54%); Total memory bits = 162,206 / 483,840 (34%); registers =
+  --       1,404; embedded multipliers = 0 / 70. All decoder memories infer
+  --       altsyncram M4K (no LE-register fallback) -- the constituent core's
+  --       alpha_mem (30 M4K) + xa/za, and this core's 7 loop mems incl. ca_mem
+  --       as a simple-dual-port scatter (4 M4K, RDW = OLD_DATA matching the
+  --       reference). 0 A&S / Fitter errors.
+  --   * Fmax (sign-off slow model) = 15.43 MHz, critical path = the constituent
+  --       core's FORWARD alpha recurrence (constituent_decoder:u_cd alpha_prev,
+  --       ~64.8 ns combinational cone). This cone is PRE-EXISTING in the
+  --       Max-Log-MAP algorithm, NOT introduced by the M4K rework, and is the
+  --       SAME 15.x MHz limit the constituent core hits standalone. Per the
+  --       user's Option A the DE2 demo runs on a slower (~12.5 MHz) PLL clock;
+  --       closing 50 MHz would need the algorithmic forward-recurrence
+  --       pipelining (a separate increment, design Risks). Bit-exactness is
+  --       preserved across all decoder lanes (constituent_decoder 27,
+  --       turbo_decoder_top 20, turbo_decoder_term_top 10 frames; golden vectors
+  --       byte-identical to master).
   attribute ramstyle : string;
   -- Persistent (set once at load). z_a / z'_a BODY (indices 0..K-1) -> M4K;
   -- the 3 termination words (indices K..K+2) live in za_termz / zpa_termz small

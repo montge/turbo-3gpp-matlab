@@ -193,3 +193,45 @@ float `turbo_decoder.m`); and at least M1 (accuracy) and M2
 extend toward a full RX path. Until then the decoder is *correct in simulation*
 and improving along the accuracy and synthesis axes — exactly the staged
 "mature over time" intent.
+
+---
+
+## 6. M4K block-RAM inference — `turbo_decoder_top` K=512 fit (board-ready)
+
+`add-fpga-decoder-block-ram-inference` made every `turbo_decoder_top`-path
+memory infer Cyclone II M4K block RAM (write lifted out of the reset-guarded
+FSM body, registered/synchronous read, `ramstyle = "M4K"`, `ca_mem` modelled as
+a simple-dual-port scatter), bit-exact to the fixed-point reference. The
+synthesis oracle is a Quartus II 13.0sp1 fit of `turbo_decoder_top` at the
+board-demo **K = 512** (`K_MAX = 512` → `N_MAX = 515`), `EP2C35F672C6`,
+VHDL_2008, 50 MHz.
+
+| | BEFORE (master, LE-banked) | AFTER (M4K inferred, K=512) |
+|---|---|---|
+| M4K | **0** (Total memory bits : 0) | **57 / 105** (54 %) |
+| Total memory bits | 0 | 162,206 / 483,840 (34 %) |
+| Logic elements | huge LE register bank (did not fit) | **10,978 / 33,216 (33 %)** |
+| Registers | — | 1,404 |
+| Embedded multipliers | 0 | **0 / 70** (max/add datapath) |
+| Device | did not fit as a board target | **FITS** (0 A&S / Fitter errors) |
+
+Per-memory M4K decomposition (all infer altsyncram; no LE-register fallback):
+
+- **constituent core** (`constituent_decoder.vhdl`): `alpha_mem` 30 M4K
+  (515×120, Simple Dual Port, RDW = OLD_DATA) + `xa_mem` / `za_mem` (515×9 each)
+  ≈ 35 M4K.
+- **turbo loop** (`turbo_decoder_top.vhdl`): the 7 loop memories `za_mem`,
+  `zpa_mem`, `chs_mem`, `ca_mem`, `ce_mem`, `xpa_body`, `xpe_body` ≈ 22 M4K;
+  `ca_mem` is the QPP-deinterleave scatter modelled as a simple-dual-port
+  (4 M4K, RDW = OLD_DATA to match the GHDL/oracle behaviour).
+
+**Fmax (sign-off slow model) = 15.43 MHz.** The critical path is the
+constituent core's **forward α recurrence** (`constituent_decoder` `alpha_prev`,
+~64.8 ns 8-way saturating-add → max-norm → saturate combinational cone). This
+cone is **pre-existing in the Max-Log-MAP algorithm** and is NOT introduced by
+the M4K rework — it is the same ~15 MHz limit the constituent core hits
+standalone. Per the user's **Option A** the DE2 demo runs on a slower
+(~12.5 MHz) PLL clock; closing 50 MHz would require the algorithmic
+forward-recurrence pipelining (a separate increment). Bit-exactness is preserved
+across all decoder lanes (`constituent_decoder` 27, `turbo_decoder_top` 20,
+`turbo_decoder_term_top` 10 frames; golden vectors byte-identical to master).
