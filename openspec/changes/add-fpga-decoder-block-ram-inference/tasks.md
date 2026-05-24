@@ -1,32 +1,48 @@
 ## 1. `constituent_decoder` memories → M4K-inferable (bit-exact)
 
-- [ ] 1.1 Lift the `alpha_mem` writes (col-0 init ~258, forward write ~292) out
+- [x] 1.1 Lift the `alpha_mem` writes (col-0 init ~258, forward write ~292) out
   of the `if rst='1' … else case st` body into a dedicated unconditional
   clocked memory process; the FSM drives only the column write-address /
   write-enable / write-data and the registered previous-column read address —
   never the array directly. Keep `alpha_mem` as one wide word per column
   (`8 × 15` bits) so the per-step max-norm reads the whole prior column in one
   registered read.
-- [ ] 1.2 Register the `alpha_mem` previous-column read used by the forward
+- [x] 1.2 Register the `alpha_mem` previous-column read used by the forward
   recurrence (~280/282) and the backward δ re-read; absorb the added one-cycle
   latency in `S_FWD`/`S_BWD` (prefetch beat or forward the just-computed column
   so the recurrence has no read bubble) so `x_e` is unchanged.
-- [ ] 1.3 Lift the `xa_mem`/`za_mem` writes (`S_LOAD` ~252–253) out of the
+- [x] 1.3 Lift the `xa_mem`/`za_mem` writes (`S_LOAD` ~252–253) out of the
   reset-guarded body into the memory process; register their `S_FWD` reads
   (~274–275) as clean 1W/1R simple-dual-port ports; align with the α prefetch.
-- [ ] 1.4 Add `ramstyle = "M4K"` to `alpha_mem`/`xa_mem`/`za_mem`; keep any
+- [x] 1.4 Add `ramstyle = "M4K"` to `alpha_mem`/`xa_mem`/`za_mem`; keep any
   power-up init; confirm no asynchronous clear on the array bodies (the α col-0
   init becomes a top-level write, not a reset clear).
-- [ ] 1.5 **Inner gate:** re-run the `constituent_decoder` cocotb/GHDL lane
+- [x] 1.5 **Inner gate:** re-run the `constituent_decoder` cocotb/GHDL lane
   (`hdl/sim/constituent_decoder/`) — MUST pass bit-for-bit against its committed
   golden vectors (representative `K`/SNR set), vectors byte-identical. No edit
   accepted until green + vectors unchanged.
-- [ ] 1.6 **Outer gate (per-core):** synthesize `constituent_decoder` at the
+- [x] 1.6 **Outer gate (per-core):** synthesize `constituent_decoder` at the
   default `N_MAX` under Quartus II 13.0sp1, `EP2C35F672C6`; confirm
   `alpha_mem`/`xa_mem`/`za_mem` inferred (`Total memory bits > 0`, M4K segments)
   not LE registers; record the M4K / memory-bit / LE counts and `Fmax`. Fall
   back to explicit `altsyncram` only if a memory still resists (design
   Decision 6).
+  - DONE. Synthesized standalone at `N_MAX=515` (K=512 sizing — the full
+    `N_MAX=6147` alpha store is ~738 Kbit > the EP2C35's 483,840 RAM bits,
+    so it cannot fit on-chip; K=512 is the documented inference-proof size
+    per design Open Question / proposal Out of Scope). Result: all three
+    arrays infer M4K Simple-Dual-Port (no LE register fallback) — `Total
+    memory bits = 71,070`, `M4K = 35/105`; `alpha_mem` 515x120 = 61,800
+    bits / 30 M4K (RDW=OLD_DATA), `xa_mem`/`za_mem` each 515x9 = 4,635 bits
+    / 3 M4K. Logic = 9,371 LE (28%); registers = 808; multipliers = 0/70.
+    Fits with large headroom; 0 A&S / Fitter errors. No `altsyncram`
+    fallback needed (clean inference). `Fmax` (sign-off) = 15.58 MHz — the
+    single-cycle forward alpha recurrence (8-way sat-add -> max-norm ->
+    saturate combinational cone, pre-existing in the algorithm, NOT
+    introduced by the M4K rework) is the bottleneck; closing 50 MHz needs
+    forward-recurrence pipelining (separate increment, design Risks). The
+    stage-1 outer gate (M4K inference: memory bits>0 / M4K>0 / mults=0 /
+    fits) is met.
 
 ## 2. `turbo_decoder_top` memories → M4K-inferable (bit-exact), incl. `ca_mem` SDP
 
