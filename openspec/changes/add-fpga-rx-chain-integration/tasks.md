@@ -33,13 +33,13 @@ transmission. Multi-CB / CRC-term / HARQ deferred (proposal scope).
 
 ## 2. Golden-vector generator
 
-- [ ] 2.1 Author `scripts/generate_hdl_de_rate_matching_vectors.m` →
+- [x] 2.1 Author `scripts/generate_hdl_de_rate_matching_vectors.m` →
   `hdl/vectors/de_rate_matching_top.csv`: per case `case_id`, `K`, `N_ref`,
   `I_LBRM`, `rv_idx`, `E`, `F_r`, the E quantized received LLRs `e_soft`, and the
   expected `3×(K+4)` `d_a` matrix (W_EXT). Document the CSV schema in the header;
   idempotent (fixed per-case seeds → byte-identical across runs); few large-`K`
   cases (sized for the linear de-rate-match latency).
-- [ ] 2.2 Vectors EXERCISE the new behaviours: (a) a baseline `E ≈ N_cb` no-wrap
+- [x] 2.2 Vectors EXERCISE the new behaviours: (a) a baseline `E ≈ N_cb` no-wrap
   case; (b) an **`E > N_cb` wrap** case (a `w` position accumulates ≥2 LLRs —
   soft-combine); (c) an `E < N_cb` **erasure** case (untransmitted `w` positions
   → `0`); (d) at least one **filler** case `F_r > 0` (first `F_r` systematic +
