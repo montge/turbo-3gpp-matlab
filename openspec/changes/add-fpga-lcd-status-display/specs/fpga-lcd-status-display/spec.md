@@ -84,6 +84,50 @@ the golden vectors, or the verdict logic.
   are unchanged
 - **AND** a KEY0 restart re-arms the verdict and the LCD updates accordingly
 
+### Requirement: LCD holds a minimum RUNNING-display window with an always-on heartbeat
+
+The system SHALL hold the LCD `RUNNING` status on line 2 for a minimum display
+window of at least ~1.5 seconds after each KEY0 start, sized from each demo's
+clock generic, before switching line 2 to the latched verdict, and SHALL blink a
+heartbeat character continuously in every display state (RUNNING, PASS, and
+FAIL), without changing the verdict/LED/7-seg path. This makes the running state
+visible to a human even though the self-check latches its verdict in well under
+1 ms.
+
+#### Scenario: RUNNING display held a minimum window regardless of fast verdict
+
+- **WHEN** a demo is (re)started by a KEY0 press and its self-check latches a
+  verdict in well under 1 ms
+- **THEN** line 2 of the LCD continues to show `RUNNING` for a minimum display
+  window of at least ~1.5 seconds (a counter sized as `1.5 × CLK_HZ` from that
+  demo's clock generic, ~1.5 s at both 12.5 MHz and 50 MHz)
+- **AND** only after that window elapses does line 2 switch to the latched
+  `PASS` or `FAIL`
+- **AND** the underlying verdict, LED outputs, and 7-seg status codes are
+  unchanged — they still reflect the actual verdict latched in under 1 ms; only
+  the LCD's RUNNING *display* is held longer
+
+#### Scenario: Heartbeat blinks in every state
+
+- **WHEN** the LCD is in any display state — RUNNING, PASS, or FAIL
+- **THEN** a heartbeat character blinks continuously at a visible cadence
+  (~0.34 s, from a free-running counter) so the board always shows an "alive"
+  pulse — for example line 2 alternates between `RUNNING *` and `RUNNING`, and
+  between `PASS *` and `PASS`
+
+#### Scenario: Per-clock timer sizing keeps the verdict path untouched
+
+- **WHEN** the minimum RUNNING-display window is added to each wrapper
+- **THEN** the window counter is sized from that wrapper's `CLK_HZ` constant
+  (`(3 × CLK_HZ) / 2` cycles) so it is ~1.5 s at both 12.5 MHz
+  (`turbo_decoder_de2_top`) and 50 MHz (`tx_chain_de2_top`)
+- **AND** the change touches only the line-2 string-selection logic and a small
+  display-state timer reloaded from the existing KEY0 restart pulse — the
+  self-check FSM, the verified cores, the golden vectors, and the
+  `hd44780_lcd` controller are unchanged
+- **AND** both demos' existing self-check lanes still PASS unchanged and the
+  golden vectors remain byte-identical
+
 ### Requirement: LCD pins and sources isolated under the board path
 
 The system SHALL keep the LCD pin assignments and controller source under the

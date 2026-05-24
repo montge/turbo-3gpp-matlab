@@ -86,9 +86,17 @@ verdict — the LEDs and `A5`/`FF` codes are unchanged. The LCD is driven from t
 | line | content |
 |------|---------|
 | line 1 | `3GPP TX K=40` (fixed demo label — tells you which demo is loaded) |
-| line 2, running | `RUNNING` + a two-glyph **blink heartbeat** (`**` toggling ~0.34 s off a free-running counter, so a live run is visibly distinct from a hung one) |
-| line 2, pass | `PASS` |
-| line 2, fail | `FAIL` |
+| line 2, running | `RUNNING` + an **always-on blink heartbeat** (`*` toggling ~0.34 s off a free-running counter, so the board always shows a live pulse) |
+| line 2, pass | `PASS` (with the same blinking `*` heartbeat) |
+| line 2, fail | `FAIL` (with the same blinking `*` heartbeat) |
+
+**Minimum RUNNING-display window (~1.5 s).** The K=40 self-check latches its
+verdict in well under 1 ms, so without help the `RUNNING` state would flash by
+invisibly. A display-state timer (`RUN_HOLD_CYC = (3 × CLK_HZ) / 2` cycles ≈
+1.5 s at 50 MHz, reloaded on each `KEY[0]` start) **holds the LCD's `RUNNING`
+*display*** for at least ~1.5 s before line 2 switches to the latched verdict —
+gating only the displayed string, not the verdict/LED/7-seg path (those still
+latch in under 1 ms). The heartbeat `*` blinks in **every** state.
 
 `KEY[0]` restarts the demo and re-runs the LCD init. The same shared controller
 serves the 12.5 MHz decoder demo too — every HD44780 timing delay is

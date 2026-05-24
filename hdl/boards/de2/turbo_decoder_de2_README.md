@@ -122,9 +122,19 @@ verdict-logic change), so it cannot affect the self-check result:
 | line | content |
 |------|---------|
 | line 1 | `3GPP TURBO K=512` (fixed demo label — tells you which demo is loaded) |
-| line 2, running | `RUNNING` + a two-glyph **blink heartbeat** (`**` toggling ~0.34 s off a free-running counter, so a live run is visibly distinct from a hung one) |
-| line 2, pass | `PASS` |
-| line 2, fail | `FAIL` |
+| line 2, running | `RUNNING` + an **always-on blink heartbeat** (`*` toggling ~0.34 s off a free-running counter, so the board always shows a live pulse) |
+| line 2, pass | `PASS` (with the same blinking `*` heartbeat) |
+| line 2, fail | `FAIL` (with the same blinking `*` heartbeat) |
+
+**Minimum RUNNING-display window (~1.5 s).** The K=512 decode latches its
+verdict in well under 1 ms (H=4 half-iterations at 12.5 MHz), so without help the
+`RUNNING` state would flash by invisibly and you would only ever see `PASS`. A
+display-state timer (`RUN_HOLD_CYC = (3 × CLK_HZ) / 2` cycles ≈ 1.5 s, reloaded
+on each `KEY[0]` start) **holds the LCD's `RUNNING` *display*** for at least
+~1.5 s before line 2 switches to the latched verdict. This gates **only** the
+displayed string — the verdict, LEDs, and `A5`/`FF` 7-seg codes still latch in
+under 1 ms exactly as before. The heartbeat `*` blinks in **every** state
+(`RUNNING *`/`RUNNING`, `PASS *`/`PASS`, `FAIL *`/`FAIL`).
 
 `KEY[0]` restarts the demo and re-runs the LCD init, so the display re-arms
 along with the LED/7-seg verdict. The HD44780 controller runs the documented

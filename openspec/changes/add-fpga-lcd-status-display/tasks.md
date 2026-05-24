@@ -85,6 +85,30 @@ vectors, and verdict logic stay UNMODIFIED throughout.
   build.
 - [ ] 4.3 Program the TX demo and confirm the LCD likewise.
 
+## 4b. Refinement — minimum RUNNING-display window + always-on heartbeat
+
+Surfaced by the stage-4 on-board test: the decode finishes in <1 ms, so the
+`RUNNING` state + heartbeat flashed by invisibly and only `PASS` was ever seen.
+This refinement holds the LCD's RUNNING *display* long enough to see, and makes
+the heartbeat always-on. The verdict/LED/7-seg path is UNCHANGED.
+
+- [x] 4b.1 In both wrappers add a `RUN_HOLD_CYC = (3 * CLK_HZ) / 2` (~1.5 s)
+  counter, reloaded from the existing KEY0 restart pulse and counting down to 0,
+  sized per wrapper's `CLK_HZ` (12.5 MHz decoder, 50 MHz TX). While nonzero, the
+  LCD line 2 HOLDS `RUNNING`; then it shows the latched verdict.
+- [x] 4b.2 Make the heartbeat always-on: a single free-running counter bit
+  (~0.34 s) drives a blink glyph in EVERY state — `RUNNING *`/`RUNNING`,
+  `PASS *`/`PASS`, `FAIL *`/`FAIL`.
+- [x] 4b.3 Confirm the change is line-2-string-only: the self-check FSM,
+  `pass_f`/`fail_f`/`done_f`, the LED/7-seg mapping, the verified cores, the
+  golden vectors, and the `hd44780_lcd` core are all untouched.
+- [x] 4b.4 GHDL gate unchanged-green: both self-check lanes (`turbo_decoder_de2`,
+  `tx_chain_de2`) still PASS on golden and FAIL on `CORRUPT_IDX`; the
+  `hd44780_lcd` byte-sequence TB still passes; `hdl/vectors/*` byte-identical.
+- [x] 4b.5 Quartus II 13.0sp1 re-fit BOTH demos: still fit (LE delta ~ one extra
+  counter), timing closes (12.5 MHz / 50 MHz), all `LCD_*` pins still mapped;
+  both `.sof` produced (scratch, not committed).
+
 ## 5. Docs + validate
 
 - [x] 5.1 Update `hdl/boards/de2/turbo_decoder_de2_README.md`,

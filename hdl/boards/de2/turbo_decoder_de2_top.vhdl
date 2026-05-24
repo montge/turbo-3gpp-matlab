@@ -44,11 +44,17 @@ use work.turbo_decoder_golden_pkg.all;  -- GV_* on-chip golden vector (K=512)
 --                      running -> HEX1=0x0 HEX0=0x0  ("00")
 --   LCD_*            16x2 HD44780 character LCD (ADDITIVE; the 7-seg/LEDs are
 --                    unchanged). Line 1 = fixed demo label "3GPP TURBO K=512";
---                    line 2 = live status decoded from the SAME pass/fail/done
---                    flags: "RUNNING" + a two-glyph blink heartbeat (so a live
---                    run is distinguishable from a hung one) -> "PASS"/"FAIL"
---                    once a verdict latches. Driven by the shared
---                    hdl/boards/hd44780_lcd.vhdl with CLK_HZ => 12_500_000.
+--                    line 2 = live status with an ALWAYS-ON blink heartbeat:
+--                    "RUNNING" is HELD for a minimum ~1.5 s display window
+--                    (sized from CLK_HZ) after each KEY0 start -- the decode
+--                    actually finishes in <1 ms, so without this hold the
+--                    RUNNING state would flash by invisibly -- then it switches
+--                    to the latched "PASS"/"FAIL". A heartbeat char ('*')
+--                    blinks (~0.34 s) in EVERY state (e.g. "PASS *"/"PASS") so
+--                    the board always shows a visible alive pulse. The verdict
+--                    itself still latches in <1 ms (LEDs/7-seg unchanged); only
+--                    the LCD's RUNNING *display* is held longer. Driven by the
+--                    shared hdl/boards/hd44780_lcd.vhdl with CLK_HZ=>12_500_000.
 entity turbo_decoder_de2_top is
   generic (
     -- TEST-ONLY fault-injection knob. Default -1 disables it, so the
@@ -197,7 +203,21 @@ architecture rtl of turbo_decoder_de2_top is
 
   -- Free-running heartbeat counter for the LCD liveness glyph. At 12.5 MHz,
   -- bit 22 toggles every 2^22 / 12.5e6 ~ 0.34 s -> a clearly visible blink.
+  -- The heartbeat is ALWAYS-ON: it blinks in every display state (PASS, FAIL,
+  -- and RUNNING) so the board always shows a visible "alive" pulse.
   signal hb_cnt : unsigned(23 downto 0) := (others => '0');
+  signal hb     : std_logic;            -- current heartbeat phase (' '/'*')
+
+  -- Minimum RUNNING-display window. The self-check latches its verdict in
+  -- well under 1 ms (K=512, H=4, 12.5 MHz), so the RUNNING state would flash
+  -- by invisibly. This counter, sized for ~1.5 s from CLK_HZ and (re)loaded on
+  -- each KEY0 restart, holds the LCD's RUNNING *display* for at least that long
+  -- before the real PASS/FAIL verdict is shown. It only gates the LCD string;
+  -- the verdict/LED/7-seg path (pass_f/fail_f/done_f) is UNCHANGED.
+  constant CLK_HZ      : integer := 12_500_000;
+  constant RUN_HOLD_CYC : integer := (3 * CLK_HZ) / 2;   -- ~1.5 s
+  signal run_hold_cnt  : integer range 0 to RUN_HOLD_CYC := RUN_HOLD_CYC;
+  signal run_hold      : std_logic;     -- '1' while the RUNNING window is held
 
   -- LCD line buffers (combinational): line 1 fixed label, line 2 live status.
   constant LCD_LABEL : string(1 to 16) := "3GPP TURBO K=512";
@@ -392,24 +412,50 @@ begin
   ---------------------------------------------------------------------------
   -- LCD status display (ADDITIVE). The verdict path above is unchanged: this
   -- only READS pass_f/fail_f/done_f. Line 1 is the fixed demo label; line 2 is
-  -- decoded combinationally from the same flags, with a blink heartbeat while
-  -- running so a live run is visibly distinct from a hung one.
+  -- decoded combinationally from the same flags, with an always-on blink
+  -- heartbeat and a minimum RUNNING-display window so a human can actually see
+  -- the running state (it otherwise resolves in well under 1 ms).
   ---------------------------------------------------------------------------
-  -- Free-running heartbeat counter (functional clock).
+  -- Free-running heartbeat counter (functional clock). hb_cnt(23) (~0.34 s)
+  -- is the blink phase, used in EVERY display state.
   process (clk)
   begin
     if rising_edge(clk) then
       hb_cnt <= hb_cnt + 1;
     end if;
   end process;
+  hb <= hb_cnt(23);
 
-  -- Line 2: "PASS" / "FAIL" once done; else "RUNNING" + a two-glyph blink.
-  -- The heartbeat alternates between '*' and ' ' on hb_cnt(23) (~0.34 s) so the
-  -- run is visibly alive. All branches are exactly 16 chars (padded).
+  -- Minimum RUNNING-display window (~1.5 s). Reloaded on a KEY0 restart, then
+  -- counts down to 0 free-running. While nonzero, the LCD HOLDS the RUNNING
+  -- string regardless of the (already-latched) verdict. The verdict flags
+  -- themselves are untouched — only the displayed line-2 string is gated.
+  process (clk)
+  begin
+    if rising_edge(clk) then
+      if restart = '1' then
+        run_hold_cnt <= RUN_HOLD_CYC;
+      elsif run_hold_cnt /= 0 then
+        run_hold_cnt <= run_hold_cnt - 1;
+      end if;
+    end if;
+  end process;
+  run_hold <= '1' when run_hold_cnt /= 0 else '0';
+
+  -- Line 2: hold RUNNING for the minimum display window, then show the latched
+  -- verdict; the heartbeat ('*'/' ') is always-on across all states. Each
+  -- branch is exactly 16 chars (padded).
   lcd_line2 <=
-    "PASS            " when pass_f = '1' else
-    "FAIL            " when fail_f = '1' else
-    "RUNNING **      " when hb_cnt(23) = '1' else
+    -- still within the minimum RUNNING-display window: show RUNNING
+    "RUNNING *       " when (run_hold = '1' and hb = '1') else
+    "RUNNING         " when (run_hold = '1')              else
+    -- verdict shown once the RUNNING window has elapsed
+    "PASS *          " when (pass_f = '1' and hb = '1')   else
+    "PASS            " when (pass_f = '1')                else
+    "FAIL *          " when (fail_f = '1' and hb = '1')   else
+    "FAIL            " when (fail_f = '1')                else
+    -- not done yet and window elapsed (e.g. a genuinely long/hung run)
+    "RUNNING *       " when (hb = '1')                    else
     "RUNNING         ";
 
   u_lcd : hd44780_lcd
