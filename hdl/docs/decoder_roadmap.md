@@ -98,6 +98,23 @@ most review.
    M4 optional DE2 board demo (switches/LEDs, no screen)
 ```
 
+> **M2 FINDING / SHELVED (2026-05-25).** A sliding-window α was prototyped
+> (Octave reference `scripts/fixedpoint_constituent_decoder_sw.m` — bit-exact,
+> KEPT/reusable) and an attempt to window `constituent_decoder`'s α-RAM was
+> made, but a Quartus fit of `turbo_decoder_top` on the EP2C35 proved the α is
+> **not** the binding M4K constraint: windowing the α yields **0 M4K benefit**
+> (K=512: 61/105 M4K windowed == full-block) and cannot reach full K=6144.
+> The real wall is the **iterative-loop LLR memories + constituent input
+> buffers** (`ca/ce/chs/za/zpa/xpa/xpe` + `xa/za`), all K-deep: ~58 M4K @ K=512
+> → ~552 M4K-equiv @ K=6144 (5×+ over 105). **Max on-chip K ≈ 1008** (full-block;
+> ~1536 even with windowed α). These loop memories are accessed in a globally
+> QPP-permuted pattern every half-iteration, so they **cannot be windowed
+> on-chip** the way α can. **Full K=6144 therefore requires EXTERNAL memory —
+> the DE2's 512 KB async SRAM (~73 KB working set, ~1× latency) is viable;
+> SDRAM is latency-hostile under random QPP access.** The α-windowing RTL was
+> shelved (no board payoff); the `_sw` Octave reference is retained. A full-K
+> external-SRAM loop-memory path is the (large) future increment if pursued.
+
 ### P1 — `add-fpga-constituent-decoder` (the keystone)
 
 - **Datapath is small** (rate-1 trellis ⇒ exactly 2 transitions in/out per
