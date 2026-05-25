@@ -1,77 +1,78 @@
-## Tasks — add-fpga-decoder-sliding-window
+## Tasks — add-fpga-decoder-sliding-window (RE-SCOPED)
 
-Two-tier gate per `decoder_roadmap.md`: inner cocotb bit-exact vs the **new**
-sliding-window fixed-point reference; outer windowing-loss band
-(windowed-vs-full-block, constituent + loop BER) and the preserved float-vs-fp
-margins; plus a Quartus II 13.0sp1 fit gate showing the M4K drop and the full
-K = 6144 fit.
+This change is **re-scoped after a negative fit result**: α windowing delivers
+0 M4K in `turbo_decoder_top` and cannot make K = 6144 fit; the QPP-globally-permuted
+loop LLR memories + K-deep input buffers are the real wall (~264 + ~78 M4K at
+K = 6144), and they cannot be on-chip-windowed. The deliverable is the **honest
+analysis + recommendation** (design.md), plus a **staged, UNCHECKED** plan for the
+only realistic full-K route (external SRAM). **No code lands in this change.**
 
-## 1. Sliding-window fixed-point reference + characterization
+The stage-1 reference work (`#73`) — `scripts/fixedpoint_constituent_decoder_sw.m`
++ `scripts/characterize_sliding_window.m`, `W = 64`, `L = 48` — is **retained as a
+shelved, validated artifact** (see §6), not extended here.
 
-- [x] 1.1 Author the windowed fixed-point reference
-  (`scripts/fixedpoint_constituent_decoder_sw.m`, or a `WINDOW_LEN`/`L`-windowed
-  mode of `fixedpoint_constituent_decoder.m`): per-window α from checkpoints + β
-  with an `L`-step flat-init acquisition warm-up, emitting in-window extrinsics.
-  Reuse the P1 arithmetic UNCHANGED (per-step max-norm, saturation, ±inf
-  sentinel, pinned widths). The terminal window uses the true terminated-state β
-  init; interior windows use the flat acquisition init.
-- [x] 1.2 Constituent windowing-loss characterization
-  (`scripts/characterize_constituent_decoder_sw.m`, or extend the existing one):
-  windowed-vs-full-block fixed-point extrinsic-LLR error (max/RMS) + hard-decision
-  agreement on systematic bits, over a bounded {K, SNR} × (W, L) grid. **Pin the
-  `W`/`L` defaults** from the curve (design.md §3 prototype: W ∈ {64,128},
-  L = 32 is the recommended default; L = 48 is bit-exact). Pin the
-  windowing-loss band ~1.5× above the worst observed cell (the P1 discipline).
-- [x] 1.3 Loop-level windowing-loss characterization (extend
-  `characterize_turbo_decoder.m`): bounded BER-vs-SNR of the windowed-core turbo
-  decoder vs the full-block-core turbo decoder and vs float `turbo_decoder.m`,
-  confirming windowing loss ≲ 0.1–0.2 dB within the documented band and that the
-  existing P1/P2 float-vs-fp margins still hold.
+## 1. Record the negative finding + re-detail the design (this change)
 
-## 2. Golden-vector generator
-
-- [ ] 2.1 Add/extend the golden-vector generator to emit the **new** windowed
-  reference's vectors (the full-block vectors do not carry over). Cover the
-  representative K set and a few SNRs at the pinned `W`/`L`; keep large-K cases
-  few (cycle budget, roadmap §2). Document the new bit-exact contract.
-
-## 3. HDL: window the constituent_decoder α/β
-
-- [ ] 3.1 Replace the full-block `alpha_mem` (`8 × (K+3)`) with a windowed α
-  store (`≈ 8 × W`) plus a boundary-state checkpoint store; rework the
-  forward/backward scheduling so α is recomputed per window from the nearest
-  checkpoint and β runs an `L`-step acquisition warm-up before each window emit.
-  Ideally behind a `WINDOW_LEN` generic with `WINDOW_LEN ≥ K+3` collapsing to the
-  existing full-block path (windowed core = strict superset). Keep the streaming
-  interface (ports, load/output cadence) UNCHANGED; preserve the M4K-inference
-  structure (write lifted out of the reset/case body, registered reads,
-  `ramstyle = "M4K"`).
-- [ ] 3.2 cocotb inner gate: `constituent_decoder` HDL bit-exact to the new
-  windowed reference over the K set at the pinned `W`/`L`.
-
-## 4. Regression: turbo / rx lanes with the windowed core
-
-- [ ] 4.1 Regenerate `turbo_decoder_top` / `turbo_decoder_term_top` /
-  `rx_chain_top` golden vectors from the windowed-core references and re-run their
-  cocotb lanes green (the windowed constituent feeds the iterative loop unmodified
-  at the interface).
-- [ ] 4.2 Full regression green (all TX lanes + decoder lanes + Octave
-  characterizations within their bands).
-
-## 5. Quartus fit: M4K drop + full K = 6144 fit
-
-- [ ] 5.1 Quartus II 13.0sp1 fit of the **full K = 6144** constituent /
-  `turbo_decoder_top` / `rx_chain_top` path on the EP2C35F672C6 (the memory that
-  previously did not fit); record LE / M4K / registers / DSP / Fmax, 0 A&S /
-  Fitter errors.
-- [ ] 5.2 Quartus fit at K = 512 showing the M4K count dropped materially below
-  the full-block baseline (constituent 35 → ~`ceil(W/34)`-driven; `rx_chain_top`
-  96/105 → headroom restored); record the before/after M4K delta.
-
-## 6. Docs + validate
-
-- [ ] 6.1 Update `hdl/docs/decoder_roadmap.md` (M2 done), the constituent sim
-  README, and the relevant fit-note headers with the windowed α/β architecture,
-  the pinned `W`/`L`, and the recorded fit numbers.
-- [ ] 6.2 `npx openspec validate add-fpga-decoder-sliding-window --strict` and
+- [ ] 1.1 Record the **negative fit finding** in design.md §1: windowed-α
+  (`WINDOW_LEN = 64`) vs full-block (`WINDOW_LEN = 6147`) `turbo_decoder_top` both
+  fit at the identical ~61/105 M4K; K = 6144 does not fit. State that α is **not**
+  the binding M4K constraint.
+- [ ] 1.2 Resolve the **WINDOW_LEN-propagation** question in design.md §2: confirm
+  **no `WINDOW_LEN`/`ACQ_LEN` generic exists in any HDL** (the windowed HDL was
+  never written; `alpha_mem` depth is `N_MAX`-driven), so the 61 = 61 result is
+  **genuine, not a non-propagation artifact**.
+- [ ] 1.3 Quantify the **loop-LLR-memory wall** in design.md §3: per-memory M4K at
+  K = 512 / K = 6144 (calibrated to `ca_mem = 4 M4K`), the ~264-M4K loop total at
+  K = 6144, and the **on-chip maximum K** (≈ 1008 full-block; ≈ 1536 windowed-α).
+- [ ] 1.4 State the **interleaver-global-access constraint** in design.md §4: the
+  QPP gather/scatter (`c_e[π[k]]` / `c_a[π[k]]`) spans the whole K-bit block, so
+  the loop LLR arrays need full random access each half-iteration and **cannot be
+  on-chip-windowed/streamed** the way α was.
+- [ ] 1.5 Record the **external-SRAM/SDRAM feasibility verdict** in design.md §5:
+  the ~73 KB working set fits the 512 KB async SRAM at ≈ 1× latency; SDRAM is
+  bandwidth-OK but random-latency-hostile (~3–5×) and controller-heavy — **SRAM is
+  the target, not SDRAM**.
+- [ ] 1.6 Record the **recommendation** in design.md §6 + Recommendation: shelve
+  windowed-α as a board M4K lever (keep the Octave reference), accept the on-chip
+  K ≤ 1008 cap, and pursue full-K only as the distinct staged external-SRAM
+  increment below.
+- [ ] 1.7 `npx openspec validate add-fpga-decoder-sliding-window --strict` and
   `npx openspec validate --all --strict` pass.
+
+## 2. Shelve windowed-α cleanly (documentation only, this change)
+
+- [ ] 2.1 Document in `hdl/docs/decoder_roadmap.md` (M2 section) that α windowing
+  is **shelved as a `turbo_decoder_top` M4K lever** (0 M4K benefit; wall is the
+  loop/input memories), the **windowed Octave reference is retained** as a
+  validated artifact reusable for the constituent-standalone on-chip-K lift
+  (≈ 1016 → ≈ 1536) and a future ASIC/larger-FPGA, and the windowed **HDL (the
+  former task 3.1) is NOT implemented**. *(Doc edit; performed when this change is
+  applied, not in the design-only PR.)*
+
+## 3. (CONDITIONAL) External-SRAM full-K increment — staged, only if full-K is required
+
+> These tasks belong to a **distinct future change**
+> (`add-fpga-decoder-external-loop-mem`). They are listed here UNCHECKED as the
+> staged plan the recommendation points to. **Do not start unless a full K = 6144
+> board demo is a hard requirement** — otherwise the on-chip K ≤ 1008 cap stands.
+
+- [ ] 3.1 **Async-SRAM controller** for the DE2 `SRAM_*` (256K × 16, ~10 ns):
+  read/write port, address mux, the SDC/QSF pinout. Bit-exact behavioural model
+  for cocotb.
+- [ ] 3.2 **Move ONE loop array off-chip** (start with `ce_mem` — the QPP gather
+  source) to external SRAM behind the controller; keep all others on-chip; re-run
+  the `turbo_decoder_top` cocotb lane bit-exact (proves the external-access
+  rework preserves the contract).
+- [ ] 3.3 **Move the remaining loop LLR arrays** (`ca_mem`, `chs_mem`, `za_mem`,
+  `zpa_mem`, `xpa_body`, `xpe_body`) off-chip with a shared SRAM arbiter; verify
+  the per-step access count fits the core-cycle budget at the chosen clock; cocotb
+  bit-exact.
+- [ ] 3.4 **Move the constituent K-deep input buffers** (`xa_mem` / `za_mem`)
+  off-chip (or confirm they fit on-chip at the target K); cocotb bit-exact.
+- [ ] 3.5 **Quartus II 13.0sp1 fit at K = 6144** of the external-SRAM
+  `turbo_decoder_top`: confirm on-chip M4K is now well under 105 (loop/input
+  arrays in SRAM, only working windows on-chip), 0 A&S/Fitter errors, and record
+  the SRAM access-latency vs decode-budget measurement.
+- [ ] 3.6 (Optional) **Wire windowed-α into the constituent** for the
+  on-chip-max-K lift to ≈ 1536, reusing the retained Octave reference and its
+  pinned `W = 64 / L = 48` — independent of the external-SRAM work.

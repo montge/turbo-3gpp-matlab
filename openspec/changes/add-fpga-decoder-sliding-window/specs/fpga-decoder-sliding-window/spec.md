@@ -1,89 +1,110 @@
 ## ADDED Requirements
 
-### Requirement: Sliding-window α/β memory bounds on-chip storage
+### Requirement: Loop-LLR-memory wall is the binding on-chip constraint, not α
+The system SHALL document that windowing the constituent α RAM delivers no M4K
+benefit in `turbo_decoder_top` and does not make K = 6144 fit, because α is not
+the binding constraint; the binding constraint is the QPP-globally-permuted loop
+LLR memories plus the K-deep input buffers, quantified per memory at K = 512 and
+K = 6144.
 
-The system SHALL compute the constituent decoder's α/β metrics over sliding
-windows of length `W` with periodic state checkpoints and an `L`-step β
-acquisition warm-up, bounding α storage to a window footprint (`≈ 8 × W` plus
-checkpoints) instead of the full-block `8 × (K+3)`, so that the full K = 6144
-turbo decoder fits the EP2C35 on-chip M4K memory.
+#### Scenario: α windowing yields zero M4K benefit in the integrated decoder
 
-#### Scenario: Windowed α with checkpoints replaces full-block α
+- **WHEN** `turbo_decoder_top` is fit under Quartus II 13.0sp1 (EP2C35F672C6)
+  with a short α window versus full-block α at the same K
+- **THEN** the recorded M4K counts are identical (~61/105 at K = 512), confirming
+  α is not the binding M4K constraint
+- **AND** the design records that there is no `WINDOW_LEN`/`ACQ_LEN` generic in
+  the HDL, so the identical result is genuine and not a non-propagation artifact
 
-- **WHEN** the constituent decoder runs with the sliding-window architecture
-- **THEN** it stores α for only the active window (`≈ 8 × W`) plus boundary-state
-  checkpoints, recomputing α within a window from the nearest checkpoint rather
-  than retaining all `K + 3` columns
-- **AND** the live α/β storage is independent of K beyond the window/checkpoint
-  sizing
+#### Scenario: loop-LLR-memory wall quantified
 
-#### Scenario: β acquisition warm-up converges before each window is emitted
+- **WHEN** the loop LLR memories (`ca_mem`, `ce_mem`, `chs_mem`, `za_mem`,
+  `zpa_mem`, `xpa_body`, `xpe_body`) and the constituent input buffers
+  (`xa_mem`, `za_mem`) are sized at K = 512 and K = 6144
+- **THEN** the design records each memory's depth × width and M4K cost calibrated
+  to the recorded `ca_mem = 4 M4K` data point
+- **AND** the K = 6144 loop-memory total is ~264 M4K and the full-decoder total is
+  several times the device's 105 M4K, so K = 6144 does not fit on-chip
 
-- **WHEN** β is computed for a window
-- **THEN** it is initialised flat (equiprobable) at a column `L` steps beyond the
-  window edge and recursed backward across those `L` acquisition steps before any
-  in-window extrinsic is emitted
-- **AND** the window adjacent to the true block end uses the true terminated-state
-  β initialisation instead of a flat acquisition
+#### Scenario: K = 6144 does not fit on-chip under any α scheme
 
-#### Scenario: Full K = 6144 path fits the EP2C35
+- **WHEN** the full K = 6144 decoder is fit on the EP2C35
+- **THEN** it does not fit (it needs far more than 105 M4K)
+- **AND** windowing α (≈ 24 M4K freed at K = 512, ≈ 204 at K = 6144) leaves a
+  residual still far over budget, so α windowing cannot make K = 6144 fit
 
-- **WHEN** the full K = 6144 constituent / `turbo_decoder_top` / `rx_chain_top`
-  path is fit under Quartus II 13.0sp1 for the EP2C35F672C6
-- **THEN** it fits within the device's M4K memory (the K = 6144 case that did not
-  fit under full-block α), with no Analysis & Synthesis or Fitter errors
-- **AND** the K = 512 M4K count drops materially below the full-block baseline
-  (constituent 35 M4K, `rx_chain_top` 96/105)
+### Requirement: On-chip maximum-K cap for the EP2C35 is pinned
+The system SHALL pin the maximum block length K that fits entirely on-chip on the
+EP2C35, given that the loop LLR memories and input buffers are K-deep and cannot
+be windowed.
 
-### Requirement: New sliding-window fixed-point reference defines the bit-exact contract
+#### Scenario: on-chip maximum K is documented
 
-The system SHALL establish a new sliding-window fixed-point reference model and
-new golden vectors, because finite-acquisition windowed BCJR is an approximation
-whose β/extrinsic is not bit-exact to the full-block decoder; the HDL SHALL be
-bit-exact to this new reference, and the prior full-block golden vectors SHALL
-NOT apply.
+- **WHEN** the maximum on-chip K is derived from the per-memory M4K model against
+  the 105-M4K budget
+- **THEN** the design pins K ≤ 1008 (next standard LTE K below the ~1024 knee)
+  with full-block α, and K ≤ 1536 if windowed-α is later wired into the constituent
+- **AND** the existing board demo at K = 512 is recorded as well inside this cap
 
-#### Scenario: Inner gate bit-exact to the new windowed reference
+### Requirement: Loop LLR memories cannot be windowed on-chip due to global QPP access
+The system SHALL document that the loop LLR memories cannot be sliding-windowed or
+streamed on-chip, because the QPP interleaver accesses them in a globally permuted
+pattern over the entire K-bit block with no local window.
 
-- **WHEN** the sliding-window HDL is verified in cocotb over the representative
-  K set with the pinned `W` and `L`
-- **THEN** it is bit-exact to the new sliding-window fixed-point reference's
-  golden vectors (the prior full-block vectors do not apply)
+#### Scenario: QPP gather/scatter spans the whole block
 
-#### Scenario: Inherited fixed-point format unchanged
+- **WHEN** a lower half-iteration reads `x'_a[k] = c_e[π[k]]` and scatters
+  `c_a[π[k]] = x'_e[k]` through the QPP interleaver π
+- **THEN** consecutive bit indices k map to scattered, non-local addresses across
+  all of `[0, K)`, so a window of source indices touches destination indices
+  spread across the whole block
+- **AND** the full `c_e`/`c_a` (and the other loop and input arrays) must be
+  randomly addressable each half-iteration, so no on-chip checkpoint/streaming
+  scheme reduces their live footprint the way it does for α
 
-- **WHEN** the windowed reference and HDL quantize and accumulate metrics
-- **THEN** they use the inherited P1 widths (`W_in = 9`, `F_in = 4`,
-  `W_gamma = 10`, `W_ab = 15`, `W_delta = 17`, `W_xe = 18`), the per-step
-  max-normalization, the saturating arithmetic, and the ±inf sentinel UNCHANGED
-- **AND** only the α/β schedule and storage differ from the full-block reference
+### Requirement: External SRAM is the specified route to full K = 6144
+The system SHALL specify external memory as the only realistic route to a full
+K = 6144 decode on the EP2C35, with the DE2's 512 KB asynchronous SRAM (not the
+SDRAM) as the target, including the latency-versus-decode-budget verdict.
 
-### Requirement: Windowing loss against the full-block decoder stays within a documented band
+#### Scenario: SRAM holds the full working set within the latency budget
 
-The system SHALL characterise the windowed reference against the full-block
-decoder and bound the windowing loss within a documented band, separately from
-the quantization loss already characterised at P1/P2.
+- **WHEN** the loop LLR arrays and constituent input buffers (~73 KB at K = 6144)
+  are placed in the DE2 512 KB async SRAM
+- **THEN** the working set fits (≈ 14 % of SRAM) and the ~10 ns async access
+  serves the per-recurrence-step reads/writes within one core cycle at the demo
+  clock (≈ 1× latency), even under the random QPP access pattern
+- **AND** the design records this as feasible but a large increment (SRAM
+  controller, board pinout, reworking every loop-mem/input access off-chip while
+  preserving the bit-exact contract)
 
-#### Scenario: Constituent-level windowing-loss band
+#### Scenario: SDRAM is rejected as random-latency-hostile
 
-- **WHEN** the windowed fixed-point reference is compared to the full-block
-  fixed-point reference on identical LLR frames
-- **THEN** the extrinsic-LLR error (max / RMS) and hard-decision agreement on the
-  systematic bits stay within the documented windowing-loss band for the pinned
-  `W`/`L`
+- **WHEN** the SDRAM option is assessed against the QPP random access pattern
+- **THEN** the design records that SDRAM bandwidth is adequate but each random
+  access pays a full row activate/CAS latency (~100–150 ns) that exceeds a core
+  cycle and stalls the recurrence (~3–5× slower), plus a heavy refresh/row
+  controller
+- **AND** SRAM is selected as the external-memory target instead of SDRAM
 
-#### Scenario: Loop-level windowing-loss band
+### Requirement: Windowed-α reference is retained as a shelved validated artifact
+The system SHALL retain the stage-1 windowed fixed-point reference and its
+characterization as a documented, validated artifact, while shelving the windowed
+α HDL because it delivers no board M4K benefit; the prior full-block golden
+vectors and the existing decoder lanes remain unchanged.
 
-- **WHEN** a bounded end-to-end BER-vs-SNR comparison runs the iterative turbo
-  decoder with the windowed core against the full-block core (and against float
-  `turbo_decoder.m`)
-- **THEN** the windowed core's implementation loss stays within the documented dB
-  band (≲ 0.1–0.2 dB attributable to windowing for the pinned `L`), confirming
-  windowing adds no accuracy regression beyond that margin
+#### Scenario: reference retained, HDL shelved
 
-#### Scenario: Existing float-vs-fixed margins preserved
+- **WHEN** the windowed Octave reference (`fixedpoint_constituent_decoder_sw.m`,
+  `W = 64`, `L = 48`) and its characterization are reviewed for salvage
+- **THEN** they are retained as correct and reusable for a constituent-standalone
+  on-chip-K lift (≈ 1016 → ≈ 1536) and a future ASIC/larger-FPGA target
+- **AND** the windowed α HDL is not implemented for this board, because it yields
+  0 M4K in `turbo_decoder_top` and cannot make K = 6144 fit
 
-- **WHEN** the existing P1 equivalence and P2 BER characterizations are re-run
-  with the windowed core
-- **THEN** they continue to pass their pinned bands, so windowing does not erode
-  the previously established float-vs-fixed-point margins
+#### Scenario: no code change and existing contract preserved
+
+- **WHEN** this re-scoped change is applied
+- **THEN** no `hdl/`, `scripts/`, `.qsf`, or `.m` files are edited and the
+  existing golden vectors, decoder cocotb lanes, and recorded fits are unchanged
+- **AND** any future windowed-α or external-SRAM work is tracked as its own change
