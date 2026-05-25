@@ -30,7 +30,7 @@ K = 6144 fit.
 
 ## 2. Golden-vector generator
 
-- [ ] 2.1 Add/extend the golden-vector generator to emit the **new** windowed
+- [x] 2.1 Add/extend the golden-vector generator to emit the **new** windowed
   reference's vectors (the full-block vectors do not carry over). Cover the
   representative K set and a few SNRs at the pinned `W`/`L`; keep large-K cases
   few (cycle budget, roadmap §2). Document the new bit-exact contract.
