@@ -8,21 +8,21 @@ K = 6144 fit.
 
 ## 1. Sliding-window fixed-point reference + characterization
 
-- [ ] 1.1 Author the windowed fixed-point reference
+- [x] 1.1 Author the windowed fixed-point reference
   (`scripts/fixedpoint_constituent_decoder_sw.m`, or a `WINDOW_LEN`/`L`-windowed
   mode of `fixedpoint_constituent_decoder.m`): per-window α from checkpoints + β
   with an `L`-step flat-init acquisition warm-up, emitting in-window extrinsics.
   Reuse the P1 arithmetic UNCHANGED (per-step max-norm, saturation, ±inf
   sentinel, pinned widths). The terminal window uses the true terminated-state β
   init; interior windows use the flat acquisition init.
-- [ ] 1.2 Constituent windowing-loss characterization
+- [x] 1.2 Constituent windowing-loss characterization
   (`scripts/characterize_constituent_decoder_sw.m`, or extend the existing one):
   windowed-vs-full-block fixed-point extrinsic-LLR error (max/RMS) + hard-decision
   agreement on systematic bits, over a bounded {K, SNR} × (W, L) grid. **Pin the
   `W`/`L` defaults** from the curve (design.md §3 prototype: W ∈ {64,128},
   L = 32 is the recommended default; L = 48 is bit-exact). Pin the
   windowing-loss band ~1.5× above the worst observed cell (the P1 discipline).
-- [ ] 1.3 Loop-level windowing-loss characterization (extend
+- [x] 1.3 Loop-level windowing-loss characterization (extend
   `characterize_turbo_decoder.m`): bounded BER-vs-SNR of the windowed-core turbo
   decoder vs the full-block-core turbo decoder and vs float `turbo_decoder.m`,
   confirming windowing loss ≲ 0.1–0.2 dB within the documented band and that the

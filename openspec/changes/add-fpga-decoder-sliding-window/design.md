@@ -150,15 +150,22 @@ Reading:
   columns (fewer windows ⇒ less recompute and lower relative latency overhead),
   at the cost of a slightly larger live α window.
 
-**Pinned defaults: `W = 64`, `L = 32`.** This sits comfortably on the converged
-part of the curve (rms ~0.03 LLR, max ~0.8 LLR ≈ 13 LSB at F_in = 4, 100 % HD
-agreement) — well inside a constituent windowing-loss band set ~1.5× above the
-worst converged cell — while keeping the live α window small (~6 M4K). `L = 48`
-is available as a "bit-exact-to-full-block" option if a future caller wants the
-windowing loss to be exactly zero (at +6 M4K and +16 cycles/window latency); the
-recommended `L = 32` is the RAM/latency-vs-margin sweet spot. The
-characterization task (1.2) re-runs this sweep across the full {K, SNR} grid and
-pins the band; these numbers are the design seed, not the final pinned band.
+**Pinned defaults (task-1.2 characterization, FINAL): `W = 64`, `L = 48`.**
+The full {K, SNR} characterization confirmed the design seed for PART 0 (superset
+byte-exact, 24/24) and PART A (constituent windowing-loss), but `L = 32` **missed
+the PART B loop-level BER band**: windowing loop loss `0.261 dB > 0.20 dB`. The
+sweep showed `L = 48` (near-bit-exact: most cells 0.0000, worst-corner
+6144 @ 0 dB rms 0.023 LLR / 100 % HD) clears it decisively — **PART B loop loss
+−0.029 dB** (i.e. lossless within Monte-Carlo noise) — so `L = 48` is pinned.
+Trade-off: `L` extends the β-acquisition warm-up; per the seed estimate it costs
+roughly +6 M4K on the live α/β window vs `L = 32` (≈ 12 vs 6 M4K) plus
++16 cycles/window latency. That is still far below the full-block 30 M4K (K=512)
+and the K = 6144 full-block ~358 M4K-equiv, so the M2 goal — α store becomes
+K-independent and full K = 6144 fits on-chip — holds; the exact post-windowing
+M4K is confirmed by the stage-5 Quartus fit. `L = 32` remains a documented
+aggressive option (smaller α, ~0.26 dB loop loss) if a future caller accepts it.
+**Pinned PART A band** (from the `L = 48` run): max|err| ≤ 3.375 LLR, rms ≤ 0.138,
+HD ≥ 99.5 %; **PART B band**: loop windowing loss ≤ 0.20 dB (observed −0.029).
 
 **Loop-level confirmation:** the prototype also ran a bounded end-to-end turbo
 BER comparison (windowed core vs full-block core vs float), K = 512,
@@ -302,10 +309,11 @@ trusted code. It deserves the most review.
 
 ## Open Questions
 
-- **Exact `W` / `L`.** Seeded at `W = 64`, `L = 32` from §3; the task-1.2
-  characterization re-runs the sweep across the full {K, SNR} grid and pins the
-  final values + band. Is `L = 32` adequate at the lowest operating SNR and
-  largest K, or should `L` scale mildly?
+- **Exact `W` / `L`.** RESOLVED (task-1.2): `W = 64`, **`L = 48`** pinned. The
+  full {K, SNR} sweep found `L = 32` adequate at the constituent level (PART A)
+  but it missed the loop-BER band (PART B, 0.261 dB > 0.20 dB); `L = 48` is
+  near-bit-exact and clears PART B (−0.029 dB). `W = 128` was not needed (`W`
+  barely affects per-bit error and doubles the α window). See §3.
 - **`WINDOW_LEN` generic as a full-block superset.** Confirm the degenerate
   `WINDOW_LEN ≥ K+3` mode reproduces the archived full-block golden vectors
   byte-identically (a clean regression cross-check) — the cleanest way to make
