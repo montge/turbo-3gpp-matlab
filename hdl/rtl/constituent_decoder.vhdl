@@ -120,6 +120,48 @@ use ieee.numeric_std.all;
 -- INTERFACE (K-agnostic streaming, repo convention: synchronous
 -- active-high rst, start latches K, out_valid/out_last; busy/done
 -- status). See qpp_interleaver.vhdl / turbo_encoder.vhdl for the style.
+--
+-- ===================================================================
+-- SLIDING-WINDOW alpha SCHEDULE (add-fpga-decoder-sliding-window, stage 3)
+-- -- bit-exact port of scripts/fixedpoint_constituent_decoder_sw.m, with a
+-- WINDOW_LEN-superset of the full-block path above:
+-- ===================================================================
+-- Two generics gate the alpha/beta SCHEDULE (the arithmetic, op-order,
+-- widths and sentinel are UNCHANGED from the full-block path -- only the
+-- alpha STORAGE and the beta INITIALIZATION differ):
+--   * WINDOW_LEN  -- the sliding-window length W. Default = N_MAX
+--                    (>= K+3 for every legal K), which collapses the
+--                    schedule to a SINGLE terminal window with no
+--                    acquisition == the full-block path above, BIT-FOR-BIT.
+--                    The reused tops (turbo_decoder_top, _term_top,
+--                    rx_chain_top) instantiate with the default, so their
+--                    golden vectors stay byte-identical (the superset
+--                    contract, design.md S6).
+--   * ACQ_LEN     -- the beta acquisition (warm-up) length L. Irrelevant in
+--                    the full-block (single-window) mode; pinned 48 for the
+--                    windowed mode (design.md S3).
+-- WINDOWED MODE (WINDOW_LEN < Nr): the length-Nr trellis is cut into
+-- ceil(Nr/W) contiguous windows. alpha is NOT retained for all Nr columns;
+-- instead the forward sweep lays down an 8-state alpha CHECKPOINT at each
+-- window boundary (alpha column m*W-1, m=1..n_win-1, into chk_mem) and each
+-- window's alpha columns are RECOMPUTED from the nearest left checkpoint
+-- when that window is swept. beta is computed PER WINDOW: the TERMINAL
+-- window (the one ending at column Nr-1, or any window whose acquisition
+-- span reaches the block end) uses the TRUE terminated-state init (state 1
+-- = 0, others = MIN_SENT); every interior window initialises beta FLAT
+-- (all-equal == 0 after max-norm, the "unknown state" prior) at acq column
+-- min(Nr, wr+L) and recurses L steps back to the window's right edge before
+-- emitting. Windows are swept in DESCENDING order (terminal first) and each
+-- window emits its columns wr..wl, so the streamed x_e is the SAME strictly
+-- descending global order (x_e(Nr-1) first, out_last on x_e(0)) the lanes'
+-- testbenches un-reverse -- the streaming interface/cadence is UNCHANGED.
+-- alpha live storage drops from 8 x (K+3) to ~ 8 x W (the window scratch,
+-- reusing alpha_mem) + 8 x ceil(Nr/W) (chk_mem checkpoints). The windowed
+-- path keeps the SAME M4K-inferable memory style (writes in the dedicated
+-- mem process, registered reads, ramstyle="M4K"). Stage 3's gate is: the
+-- WINDOW_LEN-default superset is bit-exact to the full-block path (all
+-- existing lanes green, vectors byte-identical) and windowed mode matches
+-- the _sw.m oracle; the M4K-depth drop + full-K fit are stage 4-5.
 
 entity constituent_decoder is
   generic (
@@ -131,7 +173,11 @@ entity constituent_decoder is
     W_DELTA : integer := 17;
     W_XE    : integer := 18;
     W_K     : integer := 13;     -- K width (LTE max K=6144 -> 13 bits)
-    N_MAX   : integer := 6147    -- max N = K+3 = 6144+3
+    N_MAX   : integer := 6147;   -- max N = K+3 = 6144+3
+    -- Sliding-window schedule (see header). Default WINDOW_LEN = N_MAX
+    -- forces the full-block (single-window) path == bit-exact superset.
+    WINDOW_LEN : integer := 6147;  -- W; >= K+3 default => full-block
+    ACQ_LEN    : integer := 48     -- L; beta acquisition warm-up (windowed)
   );
   port (
     clk       : in  std_logic;
@@ -283,6 +329,41 @@ architecture rtl of constituent_decoder is
   -- "next" column (k+1) is needed at a time.
   signal beta_cur : state_vec;
 
+  -- ===== Windowed schedule (WINDOW_LEN < Nr) state. Inert in the default
+  -- full-block mode (WINDOW_LEN >= Nr): wnd is latched false at start and
+  -- the S_FWD/S_BWD path above runs verbatim. =====
+  -- Max number of windows = ceil(N_MAX / 1); but WINDOW_LEN is fixed per
+  -- instance so the checkpoint store is sized to ceil(N_MAX/WINDOW_LEN).
+  -- One checkpoint per window boundary (the seed alpha column for window
+  -- m+1, = the alpha column at index m*WINDOW_LEN-1, m=1..n_win-1). We size
+  -- generously and pin ramstyle so it can map to M4K (tiny store).
+  constant N_CHK : integer := (N_MAX + WINDOW_LEN - 1) / WINDOW_LEN;
+  type chk_mem_t is array (0 to N_CHK) of std_logic_vector(W_COL-1 downto 0);
+  signal chk_mem : chk_mem_t := (others => (others => '0'));
+  attribute ramstyle of chk_mem : signal is "M4K";
+  -- chk write/read ports (driven by the FSM, array touched only in mem proc)
+  signal c_we    : std_logic := '0';
+  signal c_waddr : integer range 0 to N_CHK := 0;
+  signal c_wdata : std_logic_vector(W_COL-1 downto 0) := (others => '0');
+  signal c_raddr : integer range 0 to N_CHK := 0;
+  signal c_rd    : std_logic_vector(W_COL-1 downto 0) := (others => '0');
+
+  signal wnd      : boolean := false;             -- windowed mode active?
+  signal n_win    : integer range 0 to N_MAX := 1;
+  signal jwin     : integer range 0 to N_MAX := 0;  -- current window index 1..n_win
+  signal wl0, wr0 : integer range 0 to N_MAX := 0;  -- window edges (0-indexed)
+  signal acq0     : integer range 0 to N_MAX := 0;  -- beta acq init column
+  signal acnt     : integer range 0 to N_MAX := 0;  -- step counter within a sub-phase
+  signal a_col    : state_vec := (others => 0);     -- forward recompute accumulator
+  signal term_win : boolean := false;               -- terminal/true-init window?
+  -- Recompute pipeline-fill counter: the registered xa/za read is a 2-edge
+  -- latency (FSM-registered addr -> mem-registered data), so the first two
+  -- recompute/acquisition steps consume inputs whose RAM reads have not yet
+  -- landed; rfill counts those primed beats (and, for jwin>=2, the one-shot
+  -- checkpoint-seed beat that loads a_col from c_rd before any step).
+  signal rfill    : integer range 0 to 3 := 0;
+  signal wseed    : boolean := false;               -- jwin>=2 seed beat pending?
+
   -- Backward read latency (FSM-registered address -> mem-registered data =
   -- TWO clock edges). The backward read addresses are issued two cycles ahead
   -- of consumption: column Nr-1 in the final S_FWD step, Nr-2 in S_BWD_PRIME,
@@ -294,7 +375,17 @@ architecture rtl of constituent_decoder is
   signal alpha_l1  : state_vec := (others => 0);   -- forwarded alpha(:,Nr-1)
   signal bwd_first : std_logic := '0';             -- first backward column?
 
-  type state_t is (S_IDLE, S_LOAD, S_FWD, S_BWD_PRIME, S_BWD, S_DONE);
+  type state_t is (S_IDLE, S_LOAD, S_FWD, S_BWD_PRIME, S_BWD, S_DONE,
+                   -- windowed-mode sub-phases (WINDOW_LEN < Nr). The forward
+                   -- checkpoint sweep reuses S_FWD (it lays chk_mem boundary
+                   -- checkpoints instead of populating alpha_mem):
+                   S_WSTART,      -- begin a window (descending order): set edges
+                   S_WREC_PRIME,  -- prime the xa/za read for alpha recompute
+                   S_WREC,        -- recompute window alpha cols from checkpoint
+                   S_WACQ_PRIME,  -- prime the xa/za read for beta acquisition
+                   S_WACQ,        -- beta acquisition warm-up (L steps, no emit)
+                   S_WEMIT_PRIME, -- prime alpha+input reads for the emit sweep
+                   S_WEMIT);      -- per-column delta+extrinsic emit (wr..wl)
   signal st   : state_t := S_IDLE;
   signal Nr   : integer range 0 to N_MAX := 0;   -- N = K+3
   signal kidx : integer range 0 to N_MAX := 0;   -- step counter
@@ -374,6 +465,13 @@ begin
       end if;
       xa_rd <= xa_mem(in_raddr);
       za_rd <= za_mem(in_raddr);
+
+      -- chk: windowed-mode boundary checkpoint store (1W/1R, registered
+      -- read). Single write port, write lifted out of the FSM reset/case.
+      if c_we = '1' then
+        chk_mem(c_waddr) <= c_wdata;
+      end if;
+      c_rd <= chk_mem(c_raddr);
     end if;
   end process mem;
 
@@ -396,6 +494,7 @@ begin
       -- Memory write-enables default low; pulse only on the intended cycle.
       a_we  <= '0';
       in_we <= '0';
+      c_we  <= '0';
 
       if rst = '1' then
         st  <= S_IDLE;
@@ -408,6 +507,17 @@ begin
               Nr   <= to_integer(unsigned(k_in)) + 3;   -- N = K+3
               kidx <= 0;
               bsy  <= '1';
+              -- Decide windowed vs full-block. WINDOW_LEN >= Nr collapses to
+              -- a single terminal window == the full-block path (the default
+              -- generic forces this for every legal K). n_win = ceil(Nr/W).
+              if WINDOW_LEN < to_integer(unsigned(k_in)) + 3 then
+                wnd   <= true;
+                n_win <= (to_integer(unsigned(k_in)) + 3 + WINDOW_LEN - 1)
+                         / WINDOW_LEN;
+              else
+                wnd   <= false;
+                n_win <= 1;
+              end if;
               st   <= S_LOAD;
             end if;
 
@@ -486,12 +596,32 @@ begin
             end loop;
             -- Write column kidx to alpha RAM (for the backward re-read) and
             -- forward it for the NEXT forward step (no read bubble).
-            a_we    <= '1';
-            a_waddr <= kidx;
-            a_wdata <= pack_col(new_a);
+            -- Full-block mode: alpha_mem retains every column (the backward
+            -- sweep re-reads them). Windowed mode: the forward sweep ONLY
+            -- lays boundary checkpoints (chk_mem) -- the per-window recompute
+            -- (S_WREC) regenerates the alpha columns into alpha_mem on demand,
+            -- so the forward sweep here does NOT populate alpha_mem.
+            if not wnd then
+              a_we    <= '1';
+              a_waddr <= kidx;
+              a_wdata <= pack_col(new_a);
+            elsif (kidx + 1) mod WINDOW_LEN = 0 and kidx < Nr - 1 then
+              -- Checkpoint the alpha column at a window boundary: this is the
+              -- seed column (w0-1) for window (kidx+1)/WINDOW_LEN + 1. Stored
+              -- in chk_mem slot m = (kidx+1)/WINDOW_LEN (1..n_win-1).
+              c_we    <= '1';
+              c_waddr <= (kidx + 1) / WINDOW_LEN;
+              c_wdata <= pack_col(new_a);
+            end if;
             alpha_prev <= new_a;
 
-            if kidx = Nr - 1 then
+            if wnd and kidx = Nr - 1 then
+              -- Windowed: forward (checkpoint) sweep done. Begin the windowed
+              -- backward processing at the LAST (terminal) window so the emit
+              -- stream is strictly descending global order (x_e(Nr-1) first).
+              jwin <= n_win;
+              st   <= S_WSTART;
+            elsif kidx = Nr - 1 then
               -- init beta at column N-1: state 1 = 0, others = MIN_SENT.
               for s in 1 to STATES loop
                 if s = 1 then
@@ -602,6 +732,275 @@ begin
             else
               st  <= S_DONE;
             end if;
+
+          -- =================================================================
+          -- WINDOWED MODE sub-phases (only reached when wnd = true). Windows
+          -- are processed in DESCENDING order (jwin = n_win .. 1) so the
+          -- emitted x_e stream is strictly descending global column order
+          -- (x_e(Nr-1) first, out_last on x_e(0)) -- identical streaming
+          -- cadence to the full-block backward sweep. Bit-exact port of the
+          -- per-window schedule in fixedpoint_constituent_decoder_sw.m.
+          -- All RAM reads use the SAME 2-edge registered-read latency as the
+          -- full-block path (set in_raddr/a_raddr at cycle T -> data at T+2).
+          -- =================================================================
+
+          -- WSTART: set this window's edges, decide its beta init (terminal
+          -- true-state vs interior flat acquisition), and seed the alpha
+          -- recompute. wl0..wr0 are the window's 0-indexed column span.
+          when S_WSTART =>
+            -- Window edges (0-indexed). wr0 = min(jwin*W, Nr) - 1.
+            wl0 <= (jwin - 1) * WINDOW_LEN;
+            if jwin * WINDOW_LEN < Nr then
+              wr0 <= jwin * WINDOW_LEN - 1;
+            else
+              wr0 <= Nr - 1;
+            end if;
+            -- Seed the alpha recompute. For window 1 the seed is the true
+            -- initial alpha column (state 1 = 0, others = MIN_SENT) which IS
+            -- alpha(:,wl0=0); for jwin>=2 the seed is the boundary checkpoint
+            -- chk_mem[jwin-1] = alpha(:,wl0-1). Issue its read now (lands two
+            -- edges later, captured in the S_WREC seed beat).
+            if jwin = 1 then
+              for s in 1 to STATES loop
+                if s = 1 then a_col(s) <= 0; else a_col(s) <= MIN_SENT; end if;
+              end loop;
+              wseed <= false;
+            else
+              c_raddr <= jwin - 1;     -- chk_mem[jwin-1] (alpha at wl0-1)
+              wseed   <= true;
+            end if;
+            st <= S_WREC_PRIME;
+
+          -- WREC_PRIME: prime the recompute. The recompute forward step
+          -- producing alpha(:,c) uses the input (gamma) at column c-1, read
+          -- from xa/za RAM with the 2-edge latency. rfill counts the priming
+          -- beats: while rfill>0 the step still runs but consumes a FORWARDED
+          -- input (we forward the needed inputs into xq0/zq0,xq1/zq1 style is
+          -- not available for arbitrary columns, so instead we delay the
+          -- consume by issuing the read two beats before it is needed and
+          -- gating the first valid step with rfill). Concretely: window 1
+          -- writes the seed alpha(:,0), then steps cols 1..wr0; jwin>=2 has a
+          -- one-shot seed beat (loads a_col from c_rd) then steps cols
+          -- wl0..wr0. We schedule the input reads so xa_rd/za_rd present the
+          -- needed column exactly when the corresponding step fires.
+          -- Registered-read latency note (matches the full-block sweeps): an
+          -- address issued in beat T presents its data in xa_rd/za_rd (and
+          -- c_rd) in beat T+2. So between issuing the first address (here, in
+          -- S_WREC_PRIME) and the first step that consumes it there is exactly
+          -- ONE no-op fill beat (rfill = 1). Each subsequent step issues the
+          -- address it will consume two beats later.
+          when S_WREC_PRIME =>
+            if jwin = 1 then
+              -- seed a_col (= alpha(:,0)) is already loaded; persist it to
+              -- alpha_mem so the emit sweep can read col 0 back uniformly.
+              a_we    <= '1';
+              a_waddr <= 0;
+              a_wdata <= pack_col(a_col);
+              acnt    <= 1;            -- first computed column = 1
+              in_raddr <= 0;           -- input col 0 (for step acnt=1, T+2)
+            else
+              acnt     <= wl0;         -- first computed column = wl0
+              if wl0 >= 1 then in_raddr <= wl0 - 1; end if;  -- for step acnt=wl0
+            end if;
+            rfill <= 1;                -- one no-op fill beat before the 1st step
+            st <= S_WREC;
+
+          -- WREC: recompute alpha(:,acnt) one column per cycle, writing each to
+          -- alpha_mem. a_col is the forwarded running alpha column (no read
+          -- bubble). The single fill beat (rfill=1) also loads the jwin>=2
+          -- checkpoint seed into a_col from c_rd and issues the SECOND lead
+          -- address; no step fires until the first input has landed.
+          when S_WREC =>
+            xq := to_integer(signed(xa_rd));
+            zq := to_integer(signed(za_rd));
+            if rfill > 0 then
+              -- pipeline fill (no step). Capture the jwin>=2 checkpoint seed.
+              if jwin /= 1 and rfill = 1 then
+                a_col <= unpack_col(c_rd);   -- = alpha(:,wl0-1)
+              end if;
+              -- issue the address for the SECOND step (acnt+1 needs input acnt
+              -- ... but during fill acnt is still the first column, so issue
+              -- the input for the first column's SUCCESSOR step): the step at
+              -- column acnt needs input acnt-1 (already issued in the prime);
+              -- the step at acnt+1 needs input acnt -> issue it now.
+              if acnt <= Nr - 1 then in_raddr <= acnt; end if;
+              rfill <= rfill - 1;
+            else
+              -- forward alpha step: alpha(:,acnt) from a_col (= alpha(:,acnt-1)).
+              for s in 1 to STATES loop
+                t1 := A_TRAN(s)(0);
+                t2 := A_TRAN(s)(1);
+                c1 := sat_add(a_col(A_FROM(s)(0)),
+                              gamma_of(t1, xq, zq), AB_MIN, AB_MAX);
+                c2 := sat_add(a_col(A_FROM(s)(1)),
+                              gamma_of(t2, xq, zq), AB_MIN, AB_MAX);
+                new_a(s) := imax(c1, c2);
+              end loop;
+              m := new_a(1);
+              for s in 2 to STATES loop m := imax(m, new_a(s)); end loop;
+              for s in 1 to STATES loop
+                new_a(s) := sat_sub(new_a(s), m, AB_MIN, AB_MAX);
+              end loop;
+              a_col   <= new_a;
+              a_we    <= '1';
+              a_waddr <= acnt;
+              a_wdata <= pack_col(new_a);
+              -- lead-by-two input read for the step at column acnt+2 (which
+              -- needs input col acnt+1); the step at acnt+1 was already issued.
+              if acnt + 1 <= Nr - 1 then in_raddr <= acnt + 1; end if;
+              if acnt = wr0 then
+                st <= S_WACQ_PRIME;
+              else
+                acnt <= acnt + 1;
+              end if;
+            end if;
+
+          -- WACQ_PRIME: choose this window's beta init column + value, and
+          -- prime the acquisition input reads. acq0 (0-indexed) is where the
+          -- beta vector is initialised; the warm-up recurses from acq0-1 down
+          -- to wr0 (beta(:,c) uses input col c+1). Terminal/near-terminal
+          -- window (wr0+L >= Nr-1): init at Nr-1 with the TRUE terminated
+          -- state. Interior window: init FLAT (all 0) at acq0 = wr0+L.
+          when S_WACQ_PRIME =>
+            if wr0 + ACQ_LEN >= Nr - 1 then
+              term_win <= true;
+              acq0     <= Nr - 1;
+              for s in 1 to STATES loop
+                if s = 1 then new_b(s) := 0; else new_b(s) := MIN_SENT; end if;
+              end loop;
+              beta_cur <= new_b;
+              acnt     <= Nr - 1;          -- = acq0; produce acq0-1 .. wr0
+              -- input col acq0 (for beta col acq0-1); guard the top edge.
+              if Nr - 1 <= Nr - 1 then in_raddr <= Nr - 1; end if;
+            else
+              term_win <= false;
+              acq0     <= wr0 + ACQ_LEN;
+              beta_cur <= (others => 0);   -- flat acquisition init
+              acnt     <= wr0 + ACQ_LEN;   -- = acq0
+              in_raddr <= wr0 + ACQ_LEN;   -- input col acq0 (for beta acq0-1)
+            end if;
+            rfill <= 1;                    -- one no-op fill beat (2-edge fill)
+            st    <= S_WACQ;
+
+          -- WACQ: beta acquisition warm-up. Produce beta(:,acnt-1) from
+          -- beta_cur (= beta(:,acnt)) using input col acnt. NOT emitted. When
+          -- acnt = wr0 the warm-up is done (beta_cur = beta(:,wr0)). A terminal
+          -- window with wr0 = Nr-1 has acnt = wr0 immediately => zero steps.
+          when S_WACQ =>
+            xq := to_integer(signed(xa_rd));  -- input col acnt (when valid)
+            zq := to_integer(signed(za_rd));
+            if rfill > 0 then
+              -- pipeline fill: issue the lead address for the SECOND step
+              -- (produces beta(:,acnt-2), needs input col acnt-1).
+              if acnt - 1 >= 1 then in_raddr <= acnt - 1; end if;
+              rfill <= rfill - 1;
+            elsif acnt <= wr0 then
+              st <= S_WEMIT_PRIME;
+            else
+              for s in 1 to STATES loop
+                t1 := B_TRAN(s)(0);
+                t2 := B_TRAN(s)(1);
+                c1 := sat_add(beta_cur(B_TO(s)(0)),
+                              gamma_of(t1, xq, zq), AB_MIN, AB_MAX);
+                c2 := sat_add(beta_cur(B_TO(s)(1)),
+                              gamma_of(t2, xq, zq), AB_MIN, AB_MAX);
+                new_b(s) := imax(c1, c2);
+              end loop;
+              m := new_b(1);
+              for s in 2 to STATES loop m := imax(m, new_b(s)); end loop;
+              for s in 1 to STATES loop
+                new_b(s) := sat_sub(new_b(s), m, AB_MIN, AB_MAX);
+              end loop;
+              beta_cur <= new_b;             -- now beta(:,acnt-1)
+              -- lead-by-two: the step TWO beats hence has counter acnt-2 and
+              -- needs input col acnt-2.
+              if acnt - 2 >= 1 then in_raddr <= acnt - 2; end if;
+              acnt <= acnt - 1;
+            end if;
+
+          -- WEMIT_PRIME: beta_cur = beta(:,wr0). Prime the emit sweep reads --
+          -- alpha column wr0 and input col wr0 are consumed in the first
+          -- S_WEMIT beat (issued here, valid two edges later); also queue
+          -- wr0-1 for the second beat.
+          when S_WEMIT_PRIME =>
+            a_raddr  <= wr0;          -- alpha(:,wr0) for the first emit beat
+            in_raddr <= wr0;          -- input col wr0 for the first emit beat
+            acnt     <= wr0;          -- emit column counter wr0 .. wl0
+            rfill    <= 1;            -- one no-op fill beat (2-edge read fill)
+            st <= S_WEMIT;
+
+          -- WEMIT: per-column delta + extrinsic over [wl0..wr0], descending.
+          -- Identical arithmetic to the full-block S_BWD: alpha(:,acnt) from
+          -- alpha_mem (a_rd) + beta_cur (= beta(:,acnt)); emit x_e(acnt); then
+          -- step beta to acnt-1 (using input col acnt). out_last on global
+          -- column 0 (the final window's first emitted-down-to column). The
+          -- single fill beat absorbs the 2-edge registered-read latency.
+          when S_WEMIT =>
+            xq := to_integer(signed(xa_rd));
+            zq := to_integer(signed(za_rd));
+            if rfill > 0 then
+              -- pipeline fill (no emit): issue the alpha+input reads for the
+              -- SECOND emit beat (column acnt-1).
+              if acnt - 1 >= 0 then
+                a_raddr  <= acnt - 1;
+                in_raddr <= acnt - 1;
+              end if;
+              rfill <= rfill - 1;
+            else
+            new_a := unpack_col(a_rd);          -- recomputed alpha(:,acnt)
+            max0 := DE_MIN;
+            max1 := DE_MIN;
+            for t in 1 to 16 loop
+              ab_sum := sat_add(new_a(T_FROM(t)),
+                                beta_cur(T_TO(t)), DE_MIN, DE_MAX);
+              delta  := sat_add(ab_sum, gammaz_of(t, zq), DE_MIN, DE_MAX);
+              if T_XBIT(t) = '0' then
+                max0 := imax(max0, delta);
+              else
+                max1 := imax(max1, delta);
+              end if;
+            end loop;
+            xe_r <= sat_sub(max0, max1, XE_MIN, XE_MAX);
+            ov   <= '1';
+            if acnt = 0 then
+              ol <= '1';
+            end if;
+
+            if acnt > wl0 then
+              -- compute beta(:,acnt-1) for the next emit beat (within window).
+              for s in 1 to STATES loop
+                t1 := B_TRAN(s)(0);
+                t2 := B_TRAN(s)(1);
+                c1 := sat_add(beta_cur(B_TO(s)(0)),
+                              gamma_of(t1, xq, zq), AB_MIN, AB_MAX);
+                c2 := sat_add(beta_cur(B_TO(s)(1)),
+                              gamma_of(t2, xq, zq), AB_MIN, AB_MAX);
+                new_b(s) := imax(c1, c2);
+              end loop;
+              m := new_b(1);
+              for s in 2 to STATES loop m := imax(m, new_b(s)); end loop;
+              for s in 1 to STATES loop
+                new_b(s) := sat_sub(new_b(s), m, AB_MIN, AB_MAX);
+              end loop;
+              beta_cur <= new_b;
+              -- lead-by-two reads: the emit beat two cycles hence is at column
+              -- acnt-2 (alpha + input).
+              if acnt - 2 >= 0 then
+                a_raddr  <= acnt - 2;
+                in_raddr <= acnt - 2;
+              end if;
+              acnt <= acnt - 1;
+            else
+              -- window done. If more windows remain, go to the next lower
+              -- one; else finish.
+              if jwin > 1 then
+                jwin <= jwin - 1;
+                st   <= S_WSTART;
+              else
+                st <= S_DONE;
+              end if;
+            end if;
+            end if;  -- rfill
 
           when S_DONE =>
             bsy <= '0';

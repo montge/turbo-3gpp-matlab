@@ -37,7 +37,7 @@ K = 6144 fit.
 
 ## 3. HDL: window the constituent_decoder α/β
 
-- [ ] 3.1 Replace the full-block `alpha_mem` (`8 × (K+3)`) with a windowed α
+- [x] 3.1 Replace the full-block `alpha_mem` (`8 × (K+3)`) with a windowed α
   store (`≈ 8 × W`) plus a boundary-state checkpoint store; rework the
   forward/backward scheduling so α is recomputed per window from the nearest
   checkpoint and β runs an `L`-step acquisition warm-up before each window emit.
