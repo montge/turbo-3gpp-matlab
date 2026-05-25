@@ -46,8 +46,11 @@ K = 6144 fit.
   interface (ports, load/output cadence) UNCHANGED; preserve the M4K-inference
   structure (write lifted out of the reset/case body, registered reads,
   `ramstyle = "M4K"`).
-- [ ] 3.2 cocotb inner gate: `constituent_decoder` HDL bit-exact to the new
+- [x] 3.2 cocotb inner gate: `constituent_decoder` HDL bit-exact to the new
   windowed reference over the K set at the pinned `W`/`L`.
+  (`hdl/sim/constituent_decoder_sw/`, `WINDOW_LEN=64`/`ACQ_LEN=48` via GHDL
+  `-g`; 27/27 frames bit-exact. The P1 full-block lane stays green at the
+  default generics — windowed core = strict superset.)
 
 ## 4. Regression: turbo / rx lanes with the windowed core
 
@@ -73,5 +76,10 @@ K = 6144 fit.
 - [ ] 6.1 Update `hdl/docs/decoder_roadmap.md` (M2 done), the constituent sim
   README, and the relevant fit-note headers with the windowed α/β architecture,
   the pinned `W`/`L`, and the recorded fit numbers.
+  (Windowed sim README done: `hdl/sim/constituent_decoder_sw/README.md` documents
+  the windowing method, pinned `W=64`/`L=48`, the `-g` override, schema and run.
+  Roadmap "M2 done" + fit-note numbers are blocked on the stage-5 Quartus fit —
+  parent-driven; the README carries a TODO for the M4K-drop / full-K=6144 fit
+  numbers.)
 - [ ] 6.2 `npx openspec validate add-fpga-decoder-sliding-window --strict` and
   `npx openspec validate --all --strict` pass.
