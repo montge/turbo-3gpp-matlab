@@ -90,7 +90,15 @@ entity turbo_decoder_top is
     W_K     : integer := 13;   -- K width (LTE max K=6144 -> 13 bits)
     K_MAX   : integer := 6144; -- max block length
     -- User-approved: max iterations as a generic (default 8 -> H=16).
-    MAX_ITERATIONS : integer := 8
+    MAX_ITERATIONS : integer := 8;
+    -- Recurrence-pipelining stage-1 levers (add-fpga-decoder-recurrence-
+    -- pipelining). Threaded into the constituent_decoder instance; defaults
+    -- FALSE keep the build bit-exact to the existing golden vectors. ANCHOR_NORM
+    -- = anchor (state-1) per-step normalization instead of the 8-way max-norm;
+    -- BAL_TREE_FOLD = balanced max-tree extrinsic fold (only effective when
+    -- EXACT_LOGMAP=false, which this Max-Log-MAP top always uses).
+    ANCHOR_NORM    : boolean := false;
+    BAL_TREE_FOLD  : boolean := false
   );
   port (
     clk       : in  std_logic;
@@ -146,7 +154,10 @@ architecture rtl of turbo_decoder_top is
       W_DELTA : integer := 17;
       W_XE    : integer := 18;
       W_K     : integer := 13;
-      N_MAX   : integer := 6147
+      N_MAX   : integer := 6147;
+      EXACT_LOGMAP  : boolean := false;
+      ANCHOR_NORM   : boolean := false;
+      BAL_TREE_FOLD : boolean := false
     );
     port (
       clk       : in  std_logic;
@@ -438,7 +449,8 @@ begin
   -- ---- Core instantiations (UNMODIFIED). ----
   u_cd : constituent_decoder
     generic map (W_IN => W_IN, W_GAMMA => W_GAMMA, W_AB => W_AB,
-                 W_DELTA => W_DELTA, W_XE => W_XE, W_K => W_K, N_MAX => N_MAX)
+                 W_DELTA => W_DELTA, W_XE => W_XE, W_K => W_K, N_MAX => N_MAX,
+                 ANCHOR_NORM => ANCHOR_NORM, BAL_TREE_FOLD => BAL_TREE_FOLD)
     port map (clk => clk, rst => rst, start => cd_start, k_in => cd_k,
               in_valid => cd_in_valid, x_a_in => cd_xa, z_a_in => cd_za,
               out_valid => cd_out_valid, out_last => cd_out_last,

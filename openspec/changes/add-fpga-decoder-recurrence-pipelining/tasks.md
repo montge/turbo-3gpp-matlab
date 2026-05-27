@@ -10,13 +10,21 @@ common case (no new reference).
 
 ## 1. Stage-1 GO/NO-GO Fmax probe
 
-- [ ] 1.1 Add a **balanced-tree extrinsic fold** in `constituent_decoder` `S_BWD`
+- [x] 1.1 Add a **balanced-tree extrinsic fold** in `constituent_decoder` `S_BWD`
   behind a generic defaulting to the current serial fold; gate the tree ON only
   for `EXACT_LOGMAP=false` (plain `max` is associative → bit-exact), keeping the
   pinned serial seed-from-first order for exact mode.
-- [ ] 1.2 Add **cheaper recurrence normalization** (anchor first; modulo only
+  (Generic `BAL_TREE_FOLD : boolean := false`; effective predicate
+  `BAL_TREE_FOLD and not EXACT_LOGMAP`; `tree_max8` balanced 3-level max-tree.
+  Default + enabled both bit-exact vs golden vectors; threaded into
+  turbo_decoder_top.)
+- [x] 1.2 Add **cheaper recurrence normalization** (anchor first; modulo only
   with a width-spread proof) behind a generic defaulting to the current 8-way
   max-normalization, in both `S_FWD` (α) and `S_BWD` (β).
+  (Generic `ANCHOR_NORM : boolean := false`; true → subtract state-1 anchor
+  instead of the 8-way max in both α and β. Output-equivalent: x_e / decoded
+  bits identical with both opts enabled across all four lanes; threaded into
+  turbo_decoder_top.)
 - [ ] 1.3 Synthesize `turbo_decoder_top` (board K) under Quartus II 13.0sp1 with
   the optimizations enabled; **record restricted Fmax + the new worst-case path**.
 - [ ] 1.4 **GATE:** proceed only if Fmax ≥ ~1.5× the 14.25 MHz baseline

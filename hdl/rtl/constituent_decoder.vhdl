@@ -151,7 +151,44 @@ entity constituent_decoder is
     -- sat_sub(log_p0,log_p1) (design.md §2). The extrinsic 8-way fold is a
     -- sequential LEFT FOLD in ascending transition index (max* is NOT
     -- associative, so the fold order is part of the contract; design.md §4).
-    EXACT_LOGMAP : boolean := false
+    EXACT_LOGMAP : boolean := false;
+    -- ===================================================================
+    -- ANCHOR_NORM (add-fpga-decoder-recurrence-pipelining, stage 1 task 1.2)
+    -- ===================================================================
+    -- Default FALSE => keep the per-step 8-way max-normalization in BOTH the
+    -- forward alpha step (S_FWD) and the backward beta step (S_BWD): compute
+    -- m = max over the 8 states, store metric - m (saturating). Bit-exact to
+    -- the existing golden vectors.
+    --   TRUE => ANCHOR normalization: subtract STATE 1 (m := new_a(1) /
+    -- new_b(1)) instead of the 8-way running max. This removes the whole 8-way
+    -- max TREE from the recurrence cone (the path-(1) lever, design.md 2b). It
+    -- is OUTPUT-equivalent in Max-Log-MAP mode: the per-step offset is COMMON
+    -- to all 8 states, and the extrinsic x_e = max(delta|x=0) - max(delta|x=1)
+    -- is a difference, so the common offset cancels exactly (the same
+    -- normalization-invariance the per-step max-norm relies on). The INTERNAL
+    -- alpha/beta values change (state 1 is now the 0-anchor instead of the
+    -- per-step max), but x_e / the decoded bits are identical; no decoder lane
+    -- asserts on internal alpha/beta. Pairs with EXACT_LOGMAP independently
+    -- (anchor vs max-norm is a normalization-point choice; the max* correction
+    -- is unchanged).
+    ANCHOR_NORM : boolean := false;
+    -- ===================================================================
+    -- BAL_TREE_FOLD (add-fpga-decoder-recurrence-pipelining, stage 1 task 1.1)
+    -- ===================================================================
+    -- Default FALSE => keep the SEQUENTIAL LEFT FOLD computing max0/max1 over
+    -- the 8 x=0 / 8 x=1 transition deltas in S_BWD (seed-from-first-delta,
+    -- ascending transition index).
+    --   TRUE (and EXACT_LOGMAP=false) => reduce each x-set with a BALANCED
+    -- binary max-TREE instead of the ~7-deep serial fold (the path-(2) lever,
+    -- design.md 2a). In Max-Log-MAP mode maxstar degenerates to plain imax,
+    -- which is ASSOCIATIVE, so the tree result is BIT-IDENTICAL to the serial
+    -- fold -> the existing golden vectors stay byte-identical. The
+    -- gamma/sat_add front of the fold (the 16 delta computations) is unchanged.
+    -- CRITICAL: when EXACT_LOGMAP=true the tree is FORCIBLY DISABLED (the
+    -- non-associative max* seed-from-first order is a pinned bit-exact
+    -- contract, design.md 4 of the M1 change), so the effective predicate is
+    -- (BAL_TREE_FOLD and not EXACT_LOGMAP).
+    BAL_TREE_FOLD : boolean := false
   );
   port (
     clk       : in  std_logic;
@@ -226,6 +263,11 @@ architecture rtl of constituent_decoder is
 
   -- Metric working type: an 8-state alpha/beta column as scalar integers.
   type state_vec is array (1 to STATES) of integer;
+
+  -- The two extrinsic x-sets each have exactly STATES (=8) transition deltas
+  -- (x=0 -> transitions 1..8, x=1 -> transitions 9..16). delta8_t buffers one
+  -- such set so the BAL_TREE_FOLD path can reduce it as a balanced max-tree.
+  type delta8_t is array (1 to STATES) of integer;
 
   -- ===== M4K-inferable memories (write lifted to the mem process; sync
   -- read; ramstyle="M4K"). =====
@@ -391,6 +433,27 @@ architecture rtl of constituent_decoder is
     return sat_add(mx, corr, lo, hi);     -- +corr is a saturating add
   end function;
 
+  -- Balanced 3-level binary max-tree over the 8 deltas of one x-set
+  -- (BAL_TREE_FOLD path, design.md §2a). Uses plain imax: this is ONLY called
+  -- when EXACT_LOGMAP=false (guarded at the call site), where imax is
+  -- associative, so the tree value is BIT-IDENTICAL to the serial left-fold
+  -- of maxstar (= imax) over the same 8 elements. Depth is ceil(log2 8) = 3
+  -- (vs the 7-deep serial fold), roughly halving the S_BWD fold path.
+  function tree_max8(d : delta8_t) return integer is
+    variable l1 : integer;   -- one level-1 node
+    variable a01, a23, a45, a67 : integer;   -- level-1 results
+    variable b03, b47 : integer;             -- level-2 results
+  begin
+    a01 := imax(d(1), d(2));
+    a23 := imax(d(3), d(4));
+    a45 := imax(d(5), d(6));
+    a67 := imax(d(7), d(8));
+    b03 := imax(a01, a23);
+    b47 := imax(a45, a67);
+    l1  := imax(b03, b47);
+    return l1;
+  end function;
+
   -- gamma(t) = -x*xbit(t) - z*zbit(t), in W_GAMMA (no sat needed:
   -- |gamma| <= |x|+|z| < 2^W_IN <= 2^(W_GAMMA-1)).
   function gamma_of(t : integer; x, z : integer) return integer is
@@ -455,6 +518,9 @@ begin
     variable max1    : integer;
     variable started0 : boolean;   -- extrinsic fold: seeded the x=0 set?
     variable started1 : boolean;   -- extrinsic fold: seeded the x=1 set?
+    variable d0buf   : delta8_t;   -- BAL_TREE_FOLD: gathered x=0 deltas
+    variable d1buf   : delta8_t;   -- BAL_TREE_FOLD: gathered x=1 deltas
+    variable n0, n1  : integer;    -- fill counters for the two x-sets
   begin
     if rising_edge(clk) then
       ov <= '0';
@@ -545,12 +611,20 @@ begin
               -- the lower transition index, matching the .m into_state order).
               new_a(s) := maxstar(c1, c2, AB_MIN, AB_MAX);
             end loop;
-            -- per-step max-normalization (max over the 8 next-states). Plain
-            -- max+subtract bookkeeping offset -- NO correction (design.md §2).
-            m := new_a(1);
-            for s in 2 to STATES loop
-              m := imax(m, new_a(s));
-            end loop;
+            -- per-step normalization. Subtract a common per-step offset m from
+            -- all 8 next-states (a bookkeeping shift -- NO correction,
+            -- design.md §2). Default (ANCHOR_NORM=false): m = max over the 8
+            -- states (the 8-way max tree). ANCHOR_NORM=true: m = state 1 (the
+            -- anchor) -- output-equivalent (common offset cancels in x_e) but
+            -- removes the max tree from the recurrence cone.
+            if ANCHOR_NORM then
+              m := new_a(1);
+            else
+              m := new_a(1);
+              for s in 2 to STATES loop
+                m := imax(m, new_a(s));
+              end loop;
+            end if;
             for s in 1 to STATES loop
               new_a(s) := sat_sub(new_a(s), m, AB_MIN, AB_MAX);
             end loop;
@@ -622,37 +696,55 @@ begin
               new_a := unpack_col(a_rd);        -- stored alpha(:,kidx)
             end if;
             bwd_first <= '0';
-            -- 8-way max* over x=0 / x=1 as a SEQUENTIAL LEFT FOLD in ascending
-            -- transition index, seeded from the FIRST delta of each set (no
-            -- synthetic sentinel in the fold). max* is NOT associative, so
-            -- this order is part of the bit-exact contract (design.md §4); the
-            -- started0/started1 flags pin the seed-from-first-delta. The
-            -- correction add is conditional on EXACT_LOGMAP inside maxstar; in
-            -- the default mode the fold is exactly the prior plain 8-way max.
-            max0 := DE_MIN;
-            max1 := DE_MIN;
-            started0 := false;
-            started1 := false;
+            -- Compute the 16 transition deltas (the gamma/sat_add FRONT of the
+            -- fold, UNCHANGED) and gather each x-set's 8 deltas into d0buf/d1buf
+            -- in ascending transition index. d0buf/d1buf(1..8) hold the x=0 /
+            -- x=1 deltas in exactly the order the serial fold visits them.
+            n0 := 0;
+            n1 := 0;
             for t in 1 to 16 loop
               ab_sum := sat_add(new_a(T_FROM(t)),
                                 beta_cur(T_TO(t)), DE_MIN, DE_MAX);
               delta  := sat_add(ab_sum, gammaz_of(t, zq), DE_MIN, DE_MAX);
               if T_XBIT(t) = '0' then
-                if not started0 then
-                  max0 := delta;            -- seed from first x=0 delta
-                  started0 := true;
-                else
-                  max0 := maxstar(max0, delta, DE_MIN, DE_MAX);
-                end if;
+                n0 := n0 + 1;
+                d0buf(n0) := delta;
               else
-                if not started1 then
-                  max1 := delta;            -- seed from first x=1 delta
-                  started1 := true;
-                else
-                  max1 := maxstar(max1, delta, DE_MIN, DE_MAX);
-                end if;
+                n1 := n1 + 1;
+                d1buf(n1) := delta;
               end if;
             end loop;
+            -- Reduce each x-set. Default / EXACT_LOGMAP: the SEQUENTIAL LEFT
+            -- FOLD seeded from the first delta in ascending transition index --
+            -- max* is NOT associative under EXACT_LOGMAP, so this order is a
+            -- pinned bit-exact contract (design.md §4). BAL_TREE_FOLD (and ONLY
+            -- when EXACT_LOGMAP=false): a balanced 3-level binary max-tree;
+            -- since maxstar degenerates to associative imax there, the tree is
+            -- bit-identical to the serial fold (design.md §2a). The tree is
+            -- FORCIBLY DISABLED under EXACT_LOGMAP to preserve the pinned order.
+            if BAL_TREE_FOLD and not EXACT_LOGMAP then
+              max0 := tree_max8(d0buf);
+              max1 := tree_max8(d1buf);
+            else
+              max0 := DE_MIN;
+              max1 := DE_MIN;
+              started0 := false;
+              started1 := false;
+              for i in 1 to STATES loop
+                if not started0 then
+                  max0 := d0buf(i);          -- seed from first x=0 delta
+                  started0 := true;
+                else
+                  max0 := maxstar(max0, d0buf(i), DE_MIN, DE_MAX);
+                end if;
+                if not started1 then
+                  max1 := d1buf(i);          -- seed from first x=1 delta
+                  started1 := true;
+                else
+                  max1 := maxstar(max1, d1buf(i), DE_MIN, DE_MAX);
+                end if;
+              end loop;
+            end if;
             xe_r <= sat_sub(max0, max1, XE_MIN, XE_MAX);
             ov   <= '1';
             if kidx = 0 then
@@ -673,10 +765,15 @@ begin
                 -- the lower transition index, matching the .m outof_state order).
                 new_b(s) := maxstar(c1, c2, AB_MIN, AB_MAX);
               end loop;
-              m := new_b(1);
-              for s in 2 to STATES loop
-                m := imax(m, new_b(s));
-              end loop;
+              -- per-step normalization (same anchor/max choice as S_FWD).
+              if ANCHOR_NORM then
+                m := new_b(1);
+              else
+                m := new_b(1);
+                for s in 2 to STATES loop
+                  m := imax(m, new_b(s));
+                end loop;
+              end if;
               for s in 1 to STATES loop
                 new_b(s) := sat_sub(new_b(s), m, AB_MIN, AB_MAX);
               end loop;
