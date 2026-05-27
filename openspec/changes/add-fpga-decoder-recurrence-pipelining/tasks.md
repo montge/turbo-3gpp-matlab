@@ -1,29 +1,46 @@
-## Tasks — add-fpga-decoder-recurrence-pipelining
+# Tasks — add-fpga-decoder-recurrence-pipelining (bounded throughput)
 
-High-level STAGE skeleton (stub). Two-tier gate per `decoder_roadmap.md`:
-inner cocotb bit-exact vs the new pipelined fixed-point reference + outer
-characterization vs float, plus a Quartus II 13.0sp1 50 MHz timing-closure gate.
+Re-scoped 2026-05-27 after an Fmax probe (see `design.md` §0): anchor
+normalization alone moved Fmax 14.25 → 14.2 MHz (no gain) because the `S_BWD`
+feed-forward δ→x_e fold co-limits at ~70 ns alongside the α/β recurrence. Scope
+is now a **measurement-gated bounded throughput win**, not 50 MHz. Stage 1 is a
+GO/NO-GO synthesis gate (the M2 discipline). Two-tier verification per
+`decoder_roadmap.md`; the board's Max-Log-MAP mode is output-bit-exact in the
+common case (no new reference).
 
-## 1. Pipelined-recurrence fixed-point reference + characterization
+## 1. Stage-1 GO/NO-GO Fmax probe
 
-- [ ] 1.1 Author the Octave reference for the restructured recurrence (ACS
-  look-ahead / radix-2 schedule + intermediate widths).
-- [ ] 1.2 Generate golden vectors from the new reference; document the new
-  bit-exact contract.
-- [ ] 1.3 Outer characterization vs float confirming the decoded output / BER is
-  unchanged within the documented band.
+- [ ] 1.1 Add a **balanced-tree extrinsic fold** in `constituent_decoder` `S_BWD`
+  behind a generic defaulting to the current serial fold; gate the tree ON only
+  for `EXACT_LOGMAP=false` (plain `max` is associative → bit-exact), keeping the
+  pinned serial seed-from-first order for exact mode.
+- [ ] 1.2 Add **cheaper recurrence normalization** (anchor first; modulo only
+  with a width-spread proof) behind a generic defaulting to the current 8-way
+  max-normalization, in both `S_FWD` (α) and `S_BWD` (β).
+- [ ] 1.3 Synthesize `turbo_decoder_top` (board K) under Quartus II 13.0sp1 with
+  the optimizations enabled; **record restricted Fmax + the new worst-case path**.
+- [ ] 1.4 **GATE:** proceed only if Fmax ≥ ~1.5× the 14.25 MHz baseline
+  (≈ ≥ 22 MHz). If NO-GO, record the finding in `decoder_roadmap.md`, mark this
+  change shelved (M2-style), and stop after task 4.1.
 
-## 2. HDL recurrence restructuring
+## 2. Bit-exactness (post-GO)
 
-- [ ] 2.1 Break the single-cycle α/β feedback cone via look-ahead / radix-2
-  (precompute-then-select two trellis steps per cycle).
-- [ ] 2.2 cocotb inner gate: HDL bit-exact to the new reference over the K set.
+- [ ] 2.1 Enable the winning combination by default for Max-Log-MAP mode; re-run
+  the `constituent_decoder`, `turbo_decoder_top`, `turbo_decoder_term_top`, and
+  `constituent_decoder_logmap` cocotb lanes — all green.
+- [ ] 2.2 Confirm `hdl/vectors/*` byte-identical. Regenerate a reference + vectors
+  ONLY if design.md §3 (i) exact-mode re-association, (ii) internally-checked
+  normalization, or (iii) fold-pipeline latency forces it; if so, characterize
+  unchanged BER vs float.
 
-## 3. 50 MHz timing closure + regression
+## 3. Integrate + fit at the measured clock (post-GO)
 
-- [ ] 3.1 Quartus II 13.0sp1: `turbo_decoder_top` closes timing at 50 MHz on the
-  EP2C35 (vs the prior ~15.4 MHz); record Fmax / LE / M4K.
-- [ ] 3.2 Full regression green (all TX lanes + decoder lanes + Octave).
+- [ ] 3.1 Full regression: all TX lanes + decoder lanes + the Octave suite green.
+- [ ] 3.2 Quartus II 13.0sp1 fit `turbo_decoder_de2` at the highest PLL the
+  stage-1 Fmax supports (e.g. 25 MHz); record Fmax / LE / M4K vs the 12.5 MHz
+  baseline. Self-check + LCD demo unchanged; only the PLL ratio moves.
+- [ ] 3.3 On-board re-confirm (HARDWARE-GATED — user's board): the existing
+  `PASS e=000 it=2` decoder self-check still passes at the faster clock.
 
 ## 4. Validate
 

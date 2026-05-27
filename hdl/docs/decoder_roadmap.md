@@ -249,6 +249,19 @@ cone is **pre-existing in the Max-Log-MAP algorithm** and is NOT introduced by
 the M4K rework — it is the same ~15 MHz limit the constituent core hits
 standalone. Per the user's **Option A** the DE2 demo runs on a slower
 (~12.5 MHz) PLL clock; closing 50 MHz would require the algorithmic
-forward-recurrence pipelining (a separate increment). Bit-exactness is preserved
+forward-recurrence pipelining (a separate increment).
+
+> **Fmax probe (2026-05-27, `add-fpga-decoder-recurrence-pipelining` design §0):**
+> the "max-normalization dominates the cone" premise is **wrong**. Replacing the
+> in-loop 8-way max-norm with output-equivalent *anchor* normalization in both α
+> (`S_FWD`) and β (`S_BWD`) moved restricted Fmax 14.25 → 14.2 MHz (≈ 0), because
+> a **second ~70 ns path co-limits**: the `S_BWD` feed-forward extrinsic fold
+> (`alpha_mem read → 16-term sequential maxstar δ-fold → xe_r`). So 50 MHz needs
+> shortening *both* paths ~3.5× incl. the true feedback recurrence — not a safe
+> bet. That change is re-scoped to a **measurement-gated bounded throughput win**
+> (balanced-tree fold + cheaper norm, output-bit-exact in Max-Log-MAP mode,
+> target ~2×); stage 1 is a GO/NO-GO synth gate.
+
+Bit-exactness is preserved
 across all decoder lanes (`constituent_decoder` 27, `turbo_decoder_top` 20,
 `turbo_decoder_term_top` 10 frames; golden vectors byte-identical to master).
