@@ -18,6 +18,7 @@ VHDL_SOURCES := $(PWD)/../../rtl/qpp_rom_pkg.vhd \
                 $(PWD)/../../rtl/rate_matching_top.vhdl \
                 $(PWD)/../../rtl/tx_chain_top.vhdl \
                 $(PWD)/../../boards/hex7seg.vhdl \
+                $(PWD)/../../boards/lcd_format_pkg.vhdl \
                 $(PWD)/../../boards/hd44780_lcd.vhdl \
                 $(PWD)/../../boards/de2/tx_chain_golden_pkg.vhdl \
                 $(PWD)/../../boards/de2/tx_chain_de2_top.vhdl

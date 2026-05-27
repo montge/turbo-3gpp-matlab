@@ -10,11 +10,11 @@ STATIC config field (not a dynamic count); the TX demo has no iteration field.
 
 ## 1. `uint`→ASCII digit helper + line-2 layout
 
-- [ ] 1.1 Add a `uint`→decimal-ASCII format helper (a pure VHDL function,
+- [x] 1.1 Add a `uint`→decimal-ASCII format helper (a pure VHDL function,
   preferably a small shared definition both wrappers + the TB use): renders an
   unsigned value as a fixed-width (3-digit) zero-padded decimal ASCII string,
   MSD first, saturating to all-9s above the field so the width is guaranteed.
-- [ ] 1.2 Pin the ≤16-char line-2 field layout: TX demo
+- [x] 1.2 Pin the ≤16-char line-2 field layout: TX demo
   `PASS err=000   *` / `FAIL err=NNN   *`; decoder demo
   `PASS e=000 it=2*` / `FAIL e=NNN it=2*` (verdict + error + static `it=` +
   heartbeat in col 16). `RUNNING        *` unchanged (count shown only at the
@@ -22,30 +22,30 @@ STATIC config field (not a dynamic count); the TX demo has no iteration field.
 
 ## 2. Wire the error count (+ static iter on the decoder) into both wrappers
 
-- [ ] 2.1 In `turbo_decoder_de2_top` and `tx_chain_de2_top` add a saturating
+- [x] 2.1 In `turbo_decoder_de2_top` and `tx_chain_de2_top` add a saturating
   `err_cnt` register and extend the `CH_RUN` comparator to **count** output-bit
   mismatches across the full stream (increment `err_cnt`, keep streaming)
   instead of bailing to `CH_FAIL` on the first one. Latch the verdict at end-of-
   stream: PASS iff `err_cnt = 0` AND framing (`out_last`/`last` at the final
   index) is correct; FAIL otherwise. `pass_f`/`fail_f`/`done_f` meaning is
   preserved exactly.
-- [ ] 2.2 Splice the rendered count into line 2 via `uint_to_ascii(err_cnt, 3)`
+- [x] 2.2 Splice the rendered count into line 2 via `uint_to_ascii(err_cnt, 3)`
   in both wrappers; on the decoder also splice the STATIC `it=N` from the
   `GV_MAX_ITER`/`MAX_ITERATIONS` constant (TX demo: no iteration field). Line-2
   string-selection ladder otherwise unchanged (same `run_hold` window + always-
   on heartbeat).
-- [ ] 2.3 Confirm additive-only: the verified cores, the golden vectors, the
+- [x] 2.3 Confirm additive-only: the verified cores, the golden vectors, the
   PASS/FAIL verdict meaning, the LED / 7-seg mapping, and the `hd44780_lcd`
   controller are untouched; only the FSM comparator (count vs. bail), the
   line-2 string, and the new helper change.
 
 ## 3. Verification — GHDL gates
 
-- [ ] 3.1 Both self-check lanes (`hdl/sim/turbo_decoder_de2/`,
+- [x] 3.1 Both self-check lanes (`hdl/sim/turbo_decoder_de2/`,
   `hdl/sim/tx_chain_de2/`) still PASS on the golden vector and FAIL on
   `CORRUPT_IDX`; the `hdl/sim/hd44780_lcd/` byte-sequence TB still passes;
   `hdl/vectors/*` byte-identical.
-- [ ] 3.2 Add a byte-sequence digit assertion (extending the
+- [x] 3.2 Add a byte-sequence digit assertion (extending the
   `test_hd44780_lcd.py` latch-on-`lcd_en`-fall approach to the wrappers): assert
   line 2 renders `err=000` on the golden PASS case and `err=001` on a one-bit
   `CORRUPT_IDX` FAIL case (proving the counter + `uint_to_ascii` emit the right

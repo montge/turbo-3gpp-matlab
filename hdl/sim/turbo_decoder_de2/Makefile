@@ -15,6 +15,7 @@ VHDL_SOURCES := $(PWD)/../../rtl/qpp_rom_pkg.vhd \
                 $(PWD)/../../rtl/constituent_decoder.vhdl \
                 $(PWD)/../../rtl/turbo_decoder_top.vhdl \
                 $(PWD)/../../boards/hex7seg.vhdl \
+                $(PWD)/../../boards/lcd_format_pkg.vhdl \
                 $(PWD)/../../boards/hd44780_lcd.vhdl \
                 $(PWD)/../../boards/de2/pll_12p5_sim.vhdl \
                 $(PWD)/../../boards/de2/turbo_decoder_golden_pkg.vhdl \

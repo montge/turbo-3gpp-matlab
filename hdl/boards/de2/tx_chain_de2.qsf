@@ -29,6 +29,7 @@ set_global_assignment -name VHDL_FILE ../../rtl/circular_buffer.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/rate_matching_top.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/tx_chain_top.vhdl
 set_global_assignment -name VHDL_FILE ../hex7seg.vhdl
+set_global_assignment -name VHDL_FILE ../lcd_format_pkg.vhdl
 set_global_assignment -name VHDL_FILE ../hd44780_lcd.vhdl
 set_global_assignment -name VHDL_FILE tx_chain_golden_pkg.vhdl
 set_global_assignment -name VHDL_FILE tx_chain_de2_top.vhdl
