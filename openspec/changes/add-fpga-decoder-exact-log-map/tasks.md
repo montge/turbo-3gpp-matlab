@@ -45,15 +45,27 @@ bounded BER-vs-SNR vs float, plus a Quartus II 13.0sp1 fit gate.
   extrinsic scaling factor is reserved (omitted in v1; design.md §6). The
   dedicated exact-mode cocotb lane (task 2.2) + Quartus fit (task 3.1) are
   stage 4.
-- [ ] 2.2 cocotb inner gate: HDL bit-exact to the new reference over the K set.
+- [x] 2.2 cocotb inner gate: HDL bit-exact to the new reference over the K set.
+  DONE: `hdl/sim/constituent_decoder_logmap/` (Makefile + cocotb test) mirrors
+  the P1 `hdl/sim/constituent_decoder/` lane but elaborates the SAME core with
+  the boolean generic override `-gEXACT_LOGMAP=true` (GHDL `-g<NAME>=true`, the
+  same `-g` mechanism the turbo_decoder_top/*_de2 lanes use). Per row it drives
+  `(x_a,z_a)`, collects the reverse-streamed `x_e`, un-reverses, and asserts
+  bit-exact vs `hdl/vectors/constituent_decoder_logmap.csv`: 27/27 frames
+  (K in {40,512,6144}) bit-exact. The P1 default-mode lane (EXACT_LOGMAP=false)
+  still passes unchanged — the Max-Log-MAP superset holds.
 
 ## 3. Fit + regression
 
 - [ ] 3.1 Quartus II 13.0sp1 fit on the EP2C35; record LE / M4K and any Fmax
   delta from the added LUT depth.
-- [ ] 3.2 Full regression green (all TX lanes + decoder lanes + Octave).
+- [x] 3.2 Full regression green (all TX lanes + decoder lanes + Octave).
+  DONE: `scripts/run_all_hdl_lanes.sh` -> 19/19 lanes PASS (the new exact lane +
+  all prior lanes at their defaults). `hdl/vectors/*` byte-identical vs master
+  except the ADDED `constituent_decoder_logmap.csv`.
 
 ## 4. Validate
 
-- [ ] 4.1 `npx openspec validate add-fpga-decoder-exact-log-map --strict` and
+- [x] 4.1 `npx openspec validate add-fpga-decoder-exact-log-map --strict` and
   `npx openspec validate --all --strict` pass.
+  DONE: both pass (change valid; --all 34 passed, 0 failed).
