@@ -11,8 +11,17 @@ bounded BER-vs-SNR vs float, plus a Quartus II 13.0sp1 fit gate.
   DONE: `scripts/fixedpoint_constituent_decoder_logmap.m` (+ a windowed/loop
   wrapper in the characterization). Self-test PASS — with the correction LUT ≡ 0
   it is BYTE-EXACT to `fixedpoint_constituent_decoder.m` (Max-Log-MAP superset).
-- [ ] 1.2 Generate golden vectors from the new reference (the Max-Log-MAP
+- [x] 1.2 Generate golden vectors from the new reference (the Max-Log-MAP
   vectors do not carry over); document the new bit-exact contract.
+  DONE: `scripts/generate_hdl_constituent_decoder_logmap_vectors.m` ->
+  `hdl/vectors/constituent_decoder_logmap.csv` (27 rows, K in {40,512,6144} x
+  SNR {0,2,4} dB x 3 frames). Schema `K,x_a,z_a,x_e` (W_in=9 inputs, W_xe=18
+  expected extrinsics). Mirrors the Max-Log-MAP generator frame-for-frame
+  (same seed => x_a/z_a byte-identical to constituent_decoder.csv); x_e comes
+  from `fixedpoint_constituent_decoder_logmap.m` in EXACT mode (LUT on) and
+  differs in all 27 rows. Idempotent (run twice = byte-identical) and
+  round-trips (reload x_a/z_a + re-run the exact reference reproduces x_e).
+  The stage-4 exact-mode cocotb lane consumes this CSV.
 - [x] 1.3 Outer characterization: bounded BER-vs-SNR vs float `turbo_decoder.m`,
   showing the recovered Max-Log-MAP gap within a documented dB margin.
   DONE: `scripts/characterize_exact_log_map.m`. Result (K=512, max_iter=8):
