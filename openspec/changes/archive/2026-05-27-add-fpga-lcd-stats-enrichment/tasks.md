@@ -67,12 +67,14 @@ STATIC config field (not a dynamic count); the TX demo has no iteration field.
 
 ## 5. On-board (HARDWARE-GATED — user's board)
 
-- [ ] 5.1 Program the enriched decoder demo; confirm LCD line 2 shows
+- [x] 5.1 Program the enriched decoder demo; confirm LCD line 2 shows
   `PASS e=000 it=2` with the heartbeat (a corrupt build shows `FAIL e=NNN`), and
-  KEY0 re-runs.
-- [ ] 5.2 Close the deferred `add-fpga-lcd-status-display` task 4.3: program the
+  KEY0 re-runs. **CONFIRMED on the DE2 (2026-05-27):** line 1 `3GPP TURBO K=512`,
+  line 2 `PASS e=000 it=2` + blinking `*`.
+- [x] 5.2 Close the deferred `add-fpga-lcd-status-display` task 4.3: program the
   TX demo and visually confirm line 1 label + line 2 `RUNNING`/heartbeat →
-  `PASS err=000`, and KEY0 re-runs.
+  `PASS err=000`, and KEY0 re-runs. **CONFIRMED on the DE2 (2026-05-27):** line 1
+  `3GPP TX K=40`, line 2 `PASS err=000` + blinking `*`.
 
 ## 6. Docs + validate
 
