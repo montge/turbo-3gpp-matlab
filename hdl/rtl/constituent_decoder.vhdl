@@ -131,7 +131,27 @@ entity constituent_decoder is
     W_DELTA : integer := 17;
     W_XE    : integer := 18;
     W_K     : integer := 13;     -- K width (LTE max K=6144 -> 13 bits)
-    N_MAX   : integer := 6147    -- max N = K+3 = 6144+3
+    N_MAX   : integer := 6147;   -- max N = K+3 = 6144+3
+    -- ===================================================================
+    -- EXACT_LOGMAP (add-fpga-decoder-exact-log-map, stage 3, task 2.1)
+    -- ===================================================================
+    -- Default FALSE => the proven Max-Log-MAP core, BIT-EXACT to the
+    -- existing golden vectors (max*(a,b) collapses to plain max(a,b), the
+    -- correction add is 0). Synthesis constant-folds the LUT/adder away, so
+    -- the default build is structurally identical to today's core and every
+    -- reused top (turbo_decoder_top / turbo_decoder_term_top / rx_chain_top)
+    -- stays green unchanged.
+    --   TRUE => exact Log-MAP, bit-exact to
+    -- scripts/fixedpoint_constituent_decoder_logmap.m: after every 2-way
+    -- max(a,b) of the alpha/beta recurrences and every 2-way node of the two
+    -- extrinsic delta max-trees, add the Jacobian correction
+    -- corr_code(sat(|a-b|,0..LUT_D-1)) from a tiny quantized ROM
+    -- (f(d)=ln(1+e^-d) at the F_in=4 grid), saturating. The correction is
+    -- NOT applied at the per-step max-normalization nor the final
+    -- sat_sub(log_p0,log_p1) (design.md §2). The extrinsic 8-way fold is a
+    -- sequential LEFT FOLD in ascending transition index (max* is NOT
+    -- associative, so the fold order is part of the contract; design.md §4).
+    EXACT_LOGMAP : boolean := false
   );
   port (
     clk       : in  std_logic;
@@ -326,6 +346,51 @@ architecture rtl of constituent_decoder is
     if a >= b then return a; else return b; end if;
   end function;
 
+  -- ===================================================================
+  -- Exact-Log-MAP correction LUT (add-fpga-decoder-exact-log-map, §3).
+  -- ===================================================================
+  -- corr_code(dcode) = round( ln(1 + e^-(dcode * 2^-F_in)) * 2^F_in ),
+  -- dcode = 0 .. LUT_D-1, generated at F_in=4. Byte-identical to the
+  -- table built by build_correction_lut(56,4) in
+  -- scripts/fixedpoint_constituent_decoder_logmap.m (anchors design.md §3:
+  -- 0->11,1->11,2->10,4->9,6->8,9->7,12->6,15->5,18->4,23->3,31->2,55->1).
+  -- corr_code(56)=0 and flat-0 beyond, so saturating the INDEX to LUT_D-1 is
+  -- exact. Values in 0..11 (4-bit). Realized as a small case/ROM in logic
+  -- (56 x 4 = 224 bits): NO M4K -- well below the M4K granularity.
+  constant LUT_D    : integer := 56;     -- depth (design.md §3)
+  constant LUT_IMAX : integer := LUT_D - 1;   -- index saturation = 55
+  type lut_t is array (0 to LUT_D-1) of integer range 0 to 11;
+  constant CORR_LUT : lut_t := (
+    11, 11, 10, 10,  9,  9,  8,  8,
+     8,  7,  7,  7,  6,  6,  6,  5,
+     5,  5,  4,  4,  4,  4,  4,  3,
+     3,  3,  3,  3,  3,  2,  2,  2,
+     2,  2,  2,  2,  2,  2,  1,  1,
+     1,  1,  1,  1,  1,  1,  1,  1,
+     1,  1,  1,  1,  1,  1,  1,  1);
+
+  -- 2-way Jacobian max: max(a,b) + corr_code(sat(|a-b|)), saturating into
+  -- [lo,hi]. When EXACT_LOGMAP=false the correction is identically 0 so this
+  -- is exactly imax(a,b) clamped (== imax(a,b) for in-range operands) -- the
+  -- Max-Log-MAP superset. The LUT/adder constant-folds away in the default
+  -- build. a, b are integer LSB codes on the same F_in grid (design.md §2/§3).
+  function maxstar(a, b, lo, hi : integer) return integer is
+    variable mx   : integer;
+    variable d    : integer;
+    variable corr : integer;
+  begin
+    mx := imax(a, b);
+    if not EXACT_LOGMAP then
+      return mx;                          -- plain max (default, bit-exact)
+    end if;
+    d := abs(a - b);
+    if d > LUT_IMAX then
+      d := LUT_IMAX;                      -- saturate the INDEX (LUT flat-0 above)
+    end if;
+    corr := CORR_LUT(d);
+    return sat_add(mx, corr, lo, hi);     -- +corr is a saturating add
+  end function;
+
   -- gamma(t) = -x*xbit(t) - z*zbit(t), in W_GAMMA (no sat needed:
   -- |gamma| <= |x|+|z| < 2^W_IN <= 2^(W_GAMMA-1)).
   function gamma_of(t : integer; x, z : integer) return integer is
@@ -388,6 +453,8 @@ begin
     variable delta   : integer;
     variable max0    : integer;
     variable max1    : integer;
+    variable started0 : boolean;   -- extrinsic fold: seeded the x=0 set?
+    variable started1 : boolean;   -- extrinsic fold: seeded the x=1 set?
   begin
     if rising_edge(clk) then
       ov <= '0';
@@ -474,9 +541,12 @@ begin
                             gamma_of(t1, xq, zq), AB_MIN, AB_MAX);
               c2 := sat_add(alpha_prev(A_FROM(s)(1)),
                             gamma_of(t2, xq, zq), AB_MIN, AB_MAX);
-              new_a(s) := imax(c1, c2);
+              -- 2-way max* (correction conditional on EXACT_LOGMAP; cand1 is
+              -- the lower transition index, matching the .m into_state order).
+              new_a(s) := maxstar(c1, c2, AB_MIN, AB_MAX);
             end loop;
-            -- per-step max-normalization (max over the 8 next-states).
+            -- per-step max-normalization (max over the 8 next-states). Plain
+            -- max+subtract bookkeeping offset -- NO correction (design.md §2).
             m := new_a(1);
             for s in 2 to STATES loop
               m := imax(m, new_a(s));
@@ -552,16 +622,35 @@ begin
               new_a := unpack_col(a_rd);        -- stored alpha(:,kidx)
             end if;
             bwd_first <= '0';
+            -- 8-way max* over x=0 / x=1 as a SEQUENTIAL LEFT FOLD in ascending
+            -- transition index, seeded from the FIRST delta of each set (no
+            -- synthetic sentinel in the fold). max* is NOT associative, so
+            -- this order is part of the bit-exact contract (design.md §4); the
+            -- started0/started1 flags pin the seed-from-first-delta. The
+            -- correction add is conditional on EXACT_LOGMAP inside maxstar; in
+            -- the default mode the fold is exactly the prior plain 8-way max.
             max0 := DE_MIN;
             max1 := DE_MIN;
+            started0 := false;
+            started1 := false;
             for t in 1 to 16 loop
               ab_sum := sat_add(new_a(T_FROM(t)),
                                 beta_cur(T_TO(t)), DE_MIN, DE_MAX);
               delta  := sat_add(ab_sum, gammaz_of(t, zq), DE_MIN, DE_MAX);
               if T_XBIT(t) = '0' then
-                max0 := imax(max0, delta);
+                if not started0 then
+                  max0 := delta;            -- seed from first x=0 delta
+                  started0 := true;
+                else
+                  max0 := maxstar(max0, delta, DE_MIN, DE_MAX);
+                end if;
               else
-                max1 := imax(max1, delta);
+                if not started1 then
+                  max1 := delta;            -- seed from first x=1 delta
+                  started1 := true;
+                else
+                  max1 := maxstar(max1, delta, DE_MIN, DE_MAX);
+                end if;
               end if;
             end loop;
             xe_r <= sat_sub(max0, max1, XE_MIN, XE_MAX);
@@ -580,7 +669,9 @@ begin
                               gamma_of(t1, xq, zq), AB_MIN, AB_MAX);
                 c2 := sat_add(beta_cur(B_TO(s)(1)),
                               gamma_of(t2, xq, zq), AB_MIN, AB_MAX);
-                new_b(s) := imax(c1, c2);
+                -- 2-way max* (correction conditional on EXACT_LOGMAP; cand1 is
+                -- the lower transition index, matching the .m outof_state order).
+                new_b(s) := maxstar(c1, c2, AB_MIN, AB_MAX);
               end loop;
               m := new_b(1);
               for s in 2 to STATES loop
