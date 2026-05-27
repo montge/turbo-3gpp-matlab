@@ -479,7 +479,19 @@ begin
   --   "RUNNING        *"  (count not meaningful until the verdict latches)
   -- The error count is spliced via uint_to_ascii(err_cnt, 3) (shared helper).
   hb_chr  <= "*" when hb = '1' else " ";
-  err_str <= uint_to_ascii(err_cnt, 3);
+
+  -- Register the rendered digits so the chained-divider uint_to_ascii logic
+  -- terminates at a flop, OFF the combinational path into the LCD data
+  -- register. At the full 50 MHz CLOCK_50 the unregistered chain
+  -- (err_cnt -> 3x div/mod -> line-2 mux -> hd44780 r_data) just misses the
+  -- 20 ns budget (~0.3 ns); err_cnt is stable for ~1.5 s before the verdict
+  -- line is shown, so a one-cycle render latency is functionally invisible.
+  process (CLOCK_50)
+  begin
+    if rising_edge(CLOCK_50) then
+      err_str <= uint_to_ascii(err_cnt, 3);
+    end if;
+  end process;
 
   lcd_line2 <=
     -- still within the minimum RUNNING-display window: show RUNNING

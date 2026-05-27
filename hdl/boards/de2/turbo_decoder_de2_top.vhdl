@@ -512,7 +512,18 @@ begin
   -- the static GV_MAX_ITER constant (IT_STR), documented as configured-max, not
   -- a measured dynamic count.
   hb_chr  <= "*" when hb = '1' else " ";
-  err_str <= uint_to_ascii(err_cnt, 3);
+
+  -- Register the rendered digits so the chained-divider uint_to_ascii logic
+  -- terminates at a flop, OFF the combinational path into the LCD data
+  -- register (the same path is timing-critical on the 50 MHz TX demo; kept
+  -- symmetric here). err_cnt is stable for ~1.5 s before the verdict line is
+  -- shown, so the one-cycle render latency is functionally invisible.
+  process (clk)
+  begin
+    if rising_edge(clk) then
+      err_str <= uint_to_ascii(err_cnt, 3);
+    end if;
+  end process;
 
   lcd_line2 <=
     -- still within the minimum RUNNING-display window: show RUNNING

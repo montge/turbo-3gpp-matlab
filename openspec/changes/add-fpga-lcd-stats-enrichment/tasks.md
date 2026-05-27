@@ -53,10 +53,17 @@ STATIC config field (not a dynamic count); the TX demo has no iteration field.
 
 ## 4. Verification — Quartus fit (both demos)
 
-- [ ] 4.1 Quartus II 13.0sp1 re-fit `turbo_decoder_de2` and `tx_chain_de2`: both
-  still fit the EP2C35, all `LCD_*` pins map, timing closes (12.5 MHz PLL /
-  50 MHz). Record the LE / M4K delta (expected small +LE, zero M4K). Both `.sof`
-  produced (scratch, not committed).
+- [x] 4.1 Quartus II 13.0sp1 re-fit `turbo_decoder_de2` and `tx_chain_de2`: both
+  fit the EP2C35, all `LCD_*` pins map, timing closes. Both `.sof` produced
+  (scratch, not committed). **Results:** decoder 12,759 LE (38%) / 162,206 mem
+  bits (34%) / 1 PLL, worst setup slack **+11.151 ns** @ 12.5 MHz — LE/M4K delta
+  ~0 vs the pre-enrichment fit (the err counter + render are tiny next to the
+  K=512 core). TX 1,785 LE (5%) / 1,088 mem bits / 0 PLL, worst setup slack
+  **+1.039 ns** @ 50 MHz. NOTE: the first TX fit came in at **-0.282 ns**
+  (`err_cnt[hi] → uint_to_ascii (3× div/mod) → hd44780 r_data`); registering the
+  rendered `err_str` one cycle (off the divider chain, functionally invisible —
+  err_cnt is stable ~1.5 s before the verdict line shows) recovered it to
+  +1.039 ns. Same register applied symmetrically to the decoder.
 
 ## 5. On-board (HARDWARE-GATED — user's board)
 
@@ -69,8 +76,8 @@ STATIC config field (not a dynamic count); the TX demo has no iteration field.
 
 ## 6. Docs + validate
 
-- [ ] 6.1 Update `hdl/boards/de2/turbo_decoder_de2_README.md`,
+- [x] 6.1 Update `hdl/boards/de2/turbo_decoder_de2_README.md`,
   `tx_chain_de2_README.md`, and `hdl/boards/de2/README.md` to describe the new
   `err=NNN` field (and the decoder's static `it=N`) on LCD line 2.
-- [ ] 6.2 `npx openspec validate add-fpga-lcd-stats-enrichment --strict` and
-  `npx openspec validate --all --strict` pass.
+- [x] 6.2 `npx openspec validate add-fpga-lcd-stats-enrichment --strict` and
+  `npx openspec validate --all --strict` pass (34/34).
