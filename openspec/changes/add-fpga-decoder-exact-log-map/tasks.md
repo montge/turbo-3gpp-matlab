@@ -57,8 +57,14 @@ bounded BER-vs-SNR vs float, plus a Quartus II 13.0sp1 fit gate.
 
 ## 3. Fit + regression
 
-- [ ] 3.1 Quartus II 13.0sp1 fit on the EP2C35; record LE / M4K and any Fmax
-  delta from the added LUT depth.
+- [x] 3.1 Quartus II 13.0sp1 fit on the EP2C35; record LE / M4K and any Fmax
+  delta from the added LUT depth. DONE: `constituent_decoder` standalone @ K≈512,
+  EP2C35F672C6 — `EXACT_LOGMAP=true`: **LE 13,397 (40%), M4K 35/105 (33%),
+  0 multipliers**. Baseline (`EXACT_LOGMAP=false`, Max-Log-MAP): 9,371 LE, 35 M4K,
+  0 mult. So the `max*` LUT+adders cost **≈ +4,000 LE (~+12% of device) but 0 M4K
+  and 0 DSP** — exact mode is a pure-logic addition (no memory/multiplier
+  pressure, important vs the tight M4K budget), and default mode is unchanged
+  (the LUT/adder constant-fold away). Fits comfortably (40% LE standalone).
 - [x] 3.2 Full regression green (all TX lanes + decoder lanes + Octave).
   DONE: `scripts/run_all_hdl_lanes.sh` -> 19/19 lanes PASS (the new exact lane +
   all prior lanes at their defaults). `hdl/vectors/*` byte-identical vs master
