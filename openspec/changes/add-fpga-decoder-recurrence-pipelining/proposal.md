@@ -1,70 +1,77 @@
 ## Why
 
-This is the roadmap's **Option B** (`hdl/docs/decoder_roadmap.md` §6 + the
-archived `add-fpga-turbo-decoder-de2-demo` proposal): the decoder's **Fmax is
-capped at ~15.43 MHz** by the constituent core's **forward α recurrence** — a
-single-cycle 8-way **saturating-add → max-normalize → saturate** combinational
-feedback cone (~64.8 ns). This cone is intrinsic to the Max-Log-MAP algorithm,
-not the M4K rework, and **cannot be naively pipelined** because it is a feedback
-recurrence. Today the DE2 decoder demo works around it with **Option A**: a
-PLL-derived ~12.5 MHz clock. **Option B** is the algorithmic restructuring —
-ACS look-ahead / radix-2 unrolling of the α/β recurrence — that raises Fmax so a
-**50 MHz decoder board build** becomes possible without the slow-clock
-workaround.
+The decoder's **Fmax is ~14.25 MHz** (`turbo_decoder_de2` restricted Fmax),
+capped by the constituent core's ~70 ns critical paths, which is why the DE2
+demo runs on a ~12.5 MHz PLL workaround (the archived
+`add-fpga-turbo-decoder-de2-demo` **Option A**). The original stub framed
+**Option B** as a 50 MHz radix-2 / ACS look-ahead restructuring on the premise
+that the in-loop **per-step max-normalization** dominates the cone.
 
-This **touches the bit-exact contract**: restructuring the recurrence (e.g.
-combining two trellis steps per cycle via look-ahead) changes the internal
-schedule and intermediate widths, so it needs its **own fixed-point reference**
-and **golden vectors** that capture the pipelined recurrence, characterized to
-prove the decoded output is unchanged vs the existing decoder within the
-documented band.
+**A direct synthesis probe (2026-05-27) disproved that premise.** Replacing the
+8-way max-normalization with output-equivalent **anchor normalization** in both
+the α (`S_FWD`) and β (`S_BWD`) recurrences moved Fmax by ~0 (14.25 → 14.2 MHz),
+because a **second, independent ~70 ns path** co-limits: the `S_BWD` extrinsic
+fold (`alpha_mem read → 16-term sequential maxstar δ-fold → xe_r`), which is
+**feed-forward**, not a recurrence. So there is no cheap single lever, and 50 MHz
+(shortening *both* paths ~3.5×, one of them a true feedback recurrence) is not a
+safe bet.
+
+This change is therefore **re-scoped to a measurement-gated bounded throughput
+win**: attack the two co-limiting paths with techniques that are **output-bit-
+exact in the board's Max-Log-MAP mode**, and fit at the **measured** achievable
+clock (likely ~2× the current 12.5 MHz = ~2× decode throughput), with a stage-1
+GO/NO-GO synthesis gate. See `design.md` for the probe data and technique
+analysis.
 
 ## What Changes
 
-- **Restructure** the constituent decoder's α (and β) forward/backward
-  recurrence to break the single-cycle feedback cone — e.g. **ACS look-ahead**
-  or **radix-2** (two trellis steps folded into one precomputed-then-selected
-  cycle) — raising Fmax above ~15.4 MHz toward a 50 MHz target.
-- **Author** a fixed-point **reference** capturing the pipelined recurrence
-  schedule + widths, and golden vectors; the existing decoder vectors do NOT
-  carry over unchanged.
-- **Verify** two-tier: inner cocotb bit-exact vs the new pipelined reference;
-  outer characterization vs float confirming the decoded output / BER is
-  unchanged within the documented band.
-- **Demonstrate** the throughput goal: `turbo_decoder_top` (at the board-demo K)
-  **closes timing at 50 MHz** under Quartus II 13.0sp1, removing the need for the
-  12.5 MHz PLL workaround.
+- **Stage 1 (GO/NO-GO gate):** behind generics defaulting to current behavior,
+  implement (a) a **balanced-tree extrinsic fold** (re-associating the serial
+  `maxstar` fold — bit-exact in `EXACT_LOGMAP=false` since plain `max` is
+  associative; gated off in exact mode) and (b) **cheaper recurrence
+  normalization** (anchor / modulo, output-equivalent). **Synthesize and measure
+  Fmax.** Proceed only on ≥ ~1.5× improvement; otherwise document the finding and
+  shelve (the M2 precedent).
+- **Stage 2:** prove output-bit-exactness — all existing decoder lanes green,
+  `hdl/vectors/*` byte-identical. A new reference/vectors is required **only** if
+  exact-mode re-association, an internally-checked normalization change, or a
+  fold-pipeline latency change forces it (each contained and deterministic).
+- **Stage 3:** integrate, full regression, and Quartus II 13.0sp1 fit of
+  `turbo_decoder_de2` at the highest PLL the measured Fmax supports; record
+  Fmax / LE / M4K vs baseline. The self-check + LCD demo is unchanged; only the
+  PLL ratio moves. On-board re-confirm is hardware-gated (user's board).
 
-All work is **proposal-only in this change** — no `hdl/`, `scripts/`, `.qsf`,
-or `.m` edits land here. The exact look-ahead radix and the pipeline-depth /
-latency trade are deferred to when this change is started.
+The original 50 MHz radix-2 / ACS look-ahead on the true α/β **feedback**
+recurrence is **explicitly deferred** — it doubles per-cycle ACS work for an
+uncertain net gain and is a possible future arc only if more throughput is
+wanted after this bounded win lands.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `fpga-decoder-recurrence-pipelining`: an ACS look-ahead / radix-2
-  restructuring of the constituent decoder's α/β recurrence that breaks the
-  single-cycle saturating-add→max-norm→saturate feedback cone, raising decoder
-  Fmax above ~15.4 MHz toward a 50 MHz board build, bit-exact to a new pipelined
-  fixed-point reference (a new bit-exact contract).
+- `fpga-decoder-recurrence-pipelining`: a bounded, measurement-gated decoder
+  throughput optimization — balanced-tree extrinsic fold + cheaper recurrence
+  normalization — that raises decoder Fmax (target ~2×, measured, not 50 MHz),
+  **output-bit-exact** to the existing Max-Log-MAP golden vectors in the board's
+  default mode, enabling a faster board PLL than the 12.5 MHz Option-A workaround.
 
 ## Impact
 
-- Extends `fpga-constituent-decoder` (and transitively `fpga-turbo-decode-loop`
-  and `fpga-turbo-decoder-de2-demo`) with a restructured recurrence; changes the
-  bit-exact golden-vector contract and removes the Option-A slow-clock
-  workaround.
+- Extends `fpga-constituent-decoder` (transitively `fpga-turbo-decode-loop`,
+  `fpga-turbo-decoder-de2-demo`) with a faster, output-equivalent recurrence /
+  fold; in the common case the bit-exact golden-vector contract is **unchanged**
+  (byte-identical vectors), unlike the stub's assumed new reference.
 - Depends on the two-tier discipline (cocotb bit-exact + outer characterization)
-  and Quartus II 13.0sp1 timing-closure on the Windows host.
-- Risk: recurrence restructuring is the hard part — look-ahead precompute grows
-  area and the latency/throughput trade must be re-characterized; the bit-exact
-  contract change requires a fresh reference (the safety-critical artifact per
-  roadmap §1).
+  and Quartus II 13.0sp1 timing on the Windows host.
+- **Risk:** stage 1 may be NO-GO (the α/β feedback ACS itself may dominate); the
+  gate exists precisely to catch that and shelve with a documented finding rather
+  than sink effort — mirroring the M2 outcome.
 
 ## Out of Scope (explicit)
 
-- Exact Log-MAP accuracy (M1 / `add-fpga-decoder-exact-log-map`).
-- Sliding-window memory (M2 / `add-fpga-decoder-sliding-window`).
-- A new board demo beyond demonstrating 50 MHz timing closure (the existing
-  decoder demo can later drop its PLL once this lands).
+- The 50 MHz target and radix-2 / ACS look-ahead on the **feedback** recurrence
+  (deferred future arc).
+- Exact Log-MAP accuracy (M1 / `add-fpga-decoder-exact-log-map`, done).
+- Sliding-window memory (M2 / shelved).
+- A new board demo beyond re-fitting the existing decoder demo at a faster PLL.
