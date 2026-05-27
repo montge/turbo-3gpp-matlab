@@ -23,8 +23,19 @@ bounded BER-vs-SNR vs float, plus a Quartus II 13.0sp1 fit gate.
 
 ## 2. HDL exact-Log-MAP
 
-- [ ] 2.1 Add the `max*` correction LUT to the α/β recurrence and extrinsic
-  paths; add the extrinsic scaling factor.
+- [x] 2.1 Add the `max*` correction LUT to the α/β recurrence and extrinsic
+  paths behind an `EXACT_LOGMAP` generic (default `false` = Max-Log-MAP, the
+  bit-exact superset). DONE: `hdl/rtl/constituent_decoder.vhdl` — generic
+  `EXACT_LOGMAP : boolean := false` + the pinned 56-entry `CORR_LUT` ROM (logic,
+  no M4K) + a `maxstar(a,b)` function applied at every 2-way α/β max and each
+  2-way node of the two extrinsic δ left-folds (seed-from-first-δ, ascending
+  transition index per design.md §4); per-step max-norm and the final
+  `sat_sub(log_p0,log_p1)` stay plain (design.md §2). Default mode is bit-exact
+  (all lanes green, vectors byte-identical); `EXACT_LOGMAP=true` is bit-exact to
+  `scripts/fixedpoint_constituent_decoder_logmap.m` on a sample frame. The
+  extrinsic scaling factor is reserved (omitted in v1; design.md §6). The
+  dedicated exact-mode cocotb lane (task 2.2) + Quartus fit (task 3.1) are
+  stage 4.
 - [ ] 2.2 cocotb inner gate: HDL bit-exact to the new reference over the K set.
 
 ## 3. Fit + regression
