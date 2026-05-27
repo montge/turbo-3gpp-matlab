@@ -80,8 +80,18 @@ component, like `../hex7seg.vhdl`, referenced by each demo's `.qsf`; its
 `CLK_HZ` generic scales all HD44780 delays so one core serves both clocks). The
 LCD is **additive** — the LED/7-seg verdict is unchanged. It shows a fixed demo
 label on line 1 (so you know which demo is loaded) and a live status on line 2:
-`RUNNING` with an always-on blinking heartbeat (`*`), resolving to `PASS` /
-`FAIL` when the on-chip self-check completes. Because the self-check latches its
+`RUNNING` with an always-on blinking heartbeat (`*` in col 16), resolving to a
+verdict that now carries the **output-bit error count**: the decoder shows
+`PASS e=000 it=2*` / `FAIL e=NNN it=2*` (with the static configured
+max-iterations `it=N`) and the TX demo shows `PASS err=000   *` /
+`FAIL err=NNN   *`. The `CH_RUN` self-check counts every mismatch across the
+full stream (saturating at 999) and latches the verdict at end-of-stream — PASS
+iff the count is 0 and the framing is correct — so `e=NNN` proves the comparator
+actually counted, not just tripped a flag. Digits are formatted by the shared
+`lcd_format_pkg.uint_to_ascii` helper and registered one cycle off the divider
+chain to keep the formatter clear of the LCD data register's timing path (this
+is what holds the 50 MHz TX demo's setup slack positive). Because the self-check
+latches its
 verdict in under 1 ms, the `RUNNING` *display* is deliberately **held a minimum
 ~1.5 s** (a display-state timer sized as `(3 × CLK_HZ) / 2` cycles, reloaded on
 each `KEY[0]` start) so a human can actually see it; this gates only the LCD

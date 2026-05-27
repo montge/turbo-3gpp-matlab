@@ -122,9 +122,21 @@ verdict-logic change), so it cannot affect the self-check result:
 | line | content |
 |------|---------|
 | line 1 | `3GPP TURBO K=512` (fixed demo label — tells you which demo is loaded) |
-| line 2, running | `RUNNING` + an **always-on blink heartbeat** (`*` toggling ~0.34 s off a free-running counter, so the board always shows a live pulse) |
-| line 2, pass | `PASS` (with the same blinking `*` heartbeat) |
-| line 2, fail | `FAIL` (with the same blinking `*` heartbeat) |
+| line 2, running | `RUNNING        *` — an **always-on blink heartbeat** in col 16 (`*` toggling ~0.34 s off a free-running counter, so the board always shows a live pulse) |
+| line 2, pass | `PASS e=000 it=2*` — verdict + **output-bit error count** `e=NNN` (0 on a pass) + the **static configured max-iterations** `it=N` + heartbeat |
+| line 2, fail | `FAIL e=NNN it=2*` — `e=NNN` is the number of decoded bits that differed from the golden vector (saturates at 999), proving the self-check actually counted mismatches, not just tripped a flag |
+
+The error count is the primary added statistic: line 2 renders it via the
+shared `uint_to_ascii` helper (`hdl/boards/lcd_format_pkg.vhdl`, a pure
+fixed-width zero-padded decimal formatter saturating at all-9s). The `CH_RUN`
+comparator now **counts** every output-bit mismatch across the full 512-bit
+stream into a saturating `err_cnt` (instead of bailing on the first one) and
+latches the verdict at end-of-stream — **PASS iff `err_cnt = 0` AND the framing
+(`out_last` at index 511) is correct**, identical in meaning to the previous
+bail-on-first FSM. `it=N` is the *configured* `GV_MAX_ITER` constant (a static
+config field, not a measured per-run iteration count). The rendered digits are
+registered one cycle off the divider chain so the formatter stays clear of the
+timing-critical path into the LCD data register.
 
 **Minimum RUNNING-display window (~1.5 s).** The K=512 decode latches its
 verdict in well under 1 ms (H=4 half-iterations at 12.5 MHz), so without help the
@@ -133,8 +145,8 @@ display-state timer (`RUN_HOLD_CYC = (3 × CLK_HZ) / 2` cycles ≈ 1.5 s, reload
 on each `KEY[0]` start) **holds the LCD's `RUNNING` *display*** for at least
 ~1.5 s before line 2 switches to the latched verdict. This gates **only** the
 displayed string — the verdict, LEDs, and `A5`/`FF` 7-seg codes still latch in
-under 1 ms exactly as before. The heartbeat `*` blinks in **every** state
-(`RUNNING *`/`RUNNING`, `PASS *`/`PASS`, `FAIL *`/`FAIL`).
+under 1 ms exactly as before. The heartbeat `*` blinks in **every** state, in
+column 16 (`RUNNING        *`, `PASS e=000 it=2*`, `FAIL e=NNN it=2*`).
 
 `KEY[0]` restarts the demo and re-runs the LCD init, so the display re-arms
 along with the LED/7-seg verdict. The HD44780 controller runs the documented
