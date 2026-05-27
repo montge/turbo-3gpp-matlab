@@ -32,6 +32,7 @@ set_global_assignment -name VHDL_FILE ../../rtl/turbo_decoder_top.vhdl
 set_global_assignment -name VHDL_FILE pll_12p5_mf.vhd
 set_global_assignment -name VHDL_FILE pll_12p5.vhdl
 set_global_assignment -name VHDL_FILE ../hex7seg.vhdl
+set_global_assignment -name VHDL_FILE ../lcd_format_pkg.vhdl
 set_global_assignment -name VHDL_FILE ../hd44780_lcd.vhdl
 set_global_assignment -name VHDL_FILE turbo_decoder_golden_pkg.vhdl
 set_global_assignment -name VHDL_FILE turbo_decoder_de2_top.vhdl

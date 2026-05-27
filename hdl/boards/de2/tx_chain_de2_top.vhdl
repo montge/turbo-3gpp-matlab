@@ -4,6 +4,7 @@ use ieee.numeric_std.all;
 
 use work.qpp_rom_pkg.all;          -- QPP_W
 use work.tx_chain_golden_pkg.all;  -- GV_* on-chip golden vector (K=40 row)
+use work.lcd_format_pkg.all;       -- uint_to_ascii (shared LCD digit helper)
 
 -- Altera DE2 (Cyclone II EP2C35F672C6) board demo for the synthesis-hardened
 -- tx_chain_top core. The core is instantiated UNMODIFIED; this wrapper adds
@@ -56,7 +57,13 @@ entity tx_chain_de2_top is
     -- synthesized board behaviour is the real golden compare. The GHDL
     -- self-check TB sets it to a valid index to corrupt one expected bit and
     -- prove the comparator actually reaches FAIL. Synthesis uses the default.
-    CORRUPT_IDX : integer := -1
+    CORRUPT_IDX : integer := -1;
+    -- TEST-ONLY override for the minimum RUNNING-display hold (in cycles).
+    -- Default -1 keeps the real ~1.5 s board window; the GHDL byte-sequence TB
+    -- sets it small so the latched verdict line ("PASS err=000   *" /
+    -- "FAIL err=NNN   *") reaches the LCD within the sim budget. Synthesis uses
+    -- the default => board behaviour byte-identical.
+    RUN_HOLD_CYC_OVR : integer := -1
   );
   port (
     CLOCK_50 : in  std_logic;
@@ -187,6 +194,19 @@ architecture rtl of tx_chain_de2_top is
   signal fail_f : std_logic := '0';
   signal done_f : std_logic := '0';
 
+  -- Output-bit error count (the primary LCD stat). The CH_RUN comparator now
+  -- COUNTS mismatches across the whole output stream instead of bailing on the
+  -- first one; the verdict is latched at end-of-stream (PASS iff err_cnt = 0
+  -- AND framing correct). ERR_W = 10 bits holds the 3-digit display max (999)
+  -- with margin; the count saturates at ERR_MAX so a pathological run still
+  -- renders a fixed-width field. Real counts are bounded by GV_E = 400.
+  constant ERR_W   : integer := 10;
+  constant ERR_MAX : integer := 999;
+  signal err_cnt   : unsigned(ERR_W-1 downto 0) := (others => '0');
+  -- Framing-error flag: set if `last` lands early/late/missing or the stream
+  -- over-runs E bits. PASS requires err_cnt = 0 AND frame_err = '0'.
+  signal frame_err : std_logic := '0';
+
   -- Free-running heartbeat counter for the LCD liveness glyph. At 50 MHz,
   -- bit 24 toggles every 2^24 / 50e6 ~ 0.34 s -> a clearly visible blink.
   -- The heartbeat is ALWAYS-ON: it blinks in every display state (PASS, FAIL,
@@ -201,13 +221,27 @@ architecture rtl of tx_chain_de2_top is
   -- PASS/FAIL verdict is shown. It only gates the LCD string; the verdict/LED/
   -- 7-seg path (pass_f/fail_f/done_f) is UNCHANGED.
   constant CLK_HZ       : integer := 50_000_000;
-  constant RUN_HOLD_CYC : integer := (3 * CLK_HZ) / 2;   -- ~1.5 s
+  -- ~1.5 s on the board; a TB may override small (RUN_HOLD_CYC_OVR >= 0) so
+  -- the verdict line reaches the LCD within the sim budget. Default keeps 1.5 s.
+  function run_hold_cycles return integer is
+  begin
+    if RUN_HOLD_CYC_OVR >= 0 then
+      return RUN_HOLD_CYC_OVR;
+    else
+      return (3 * CLK_HZ) / 2;
+    end if;
+  end function;
+  constant RUN_HOLD_CYC : integer := run_hold_cycles;
   signal run_hold_cnt   : integer range 0 to RUN_HOLD_CYC := RUN_HOLD_CYC;
   signal run_hold       : std_logic;    -- '1' while the RUNNING window is held
 
   -- LCD line buffers: line 1 fixed label, line 2 live status (combinational).
   constant LCD_LABEL : string(1 to 16) := "3GPP TX K=40    ";
   signal lcd_line2   : string(1 to 16);
+  -- Heartbeat glyph as a 1-char string for line-2 splicing.
+  signal hb_chr      : string(1 to 1);
+  -- Rendered 3-digit error count (e.g. "000", "042"), shared helper.
+  signal err_str     : string(1 to 3);
 
   -- Expected bit at index i, with the TEST-ONLY corruption applied at
   -- CORRUPT_IDX (default -1 => never corrupts => returns the true golden bit).
@@ -270,23 +304,27 @@ begin
       core_cin   <= '0';
 
       if restart = '1' then
-        chk      <= CH_RESET;
-        core_rst <= '1';
-        load_idx <= 0;
-        cmp_idx  <= 0;
-        pass_f   <= '0';
-        fail_f   <= '0';
-        done_f   <= '0';
+        chk       <= CH_RESET;
+        core_rst  <= '1';
+        load_idx  <= 0;
+        cmp_idx   <= 0;
+        pass_f    <= '0';
+        fail_f    <= '0';
+        done_f    <= '0';
+        err_cnt   <= (others => '0');
+        frame_err <= '0';
       else
         case chk is
           when CH_RESET =>
-            core_rst <= '1';        -- one full cycle of reset to the core
-            load_idx <= 0;
-            cmp_idx  <= 0;
-            pass_f   <= '0';
-            fail_f   <= '0';
-            done_f   <= '0';
-            chk      <= CH_START;
+            core_rst  <= '1';       -- one full cycle of reset to the core
+            load_idx  <= 0;
+            cmp_idx   <= 0;
+            pass_f    <= '0';
+            fail_f    <= '0';
+            done_f    <= '0';
+            err_cnt   <= (others => '0');
+            frame_err <= '0';
+            chk       <= CH_START;
 
           when CH_START =>
             core_rst   <= '0';
@@ -312,39 +350,56 @@ begin
 
           when CH_RUN =>
             core_rst <= '0';
+            -- COUNT mismatches across the whole stream (do NOT bail on the
+            -- first one); accumulate into the saturating err_cnt. Framing
+            -- problems set frame_err. The verdict is latched at end-of-stream:
+            -- PASS iff err_cnt = 0 AND frame_err = '0', else FAIL. This keeps
+            -- the verdict MEANING identical to the bail-on-first FSM while
+            -- producing the true mismatch total for the LCD err= field.
             if core_ov = '1' then
               if cmp_idx < GV_E then
+                -- per-bit compare: increment err_cnt (saturating) on mismatch,
+                -- but keep streaming so the full count accumulates.
                 if core_eb /= exp_bit(cmp_idx) then
-                  -- bit mismatch
-                  fail_f <= '1';
-                  done_f <= '1';
-                  chk    <= CH_FAIL;
-                elsif cmp_idx = GV_E - 1 then
-                  -- last expected bit: it must coincide with `last`.
-                  if core_last = '1' then
+                  if err_cnt < to_unsigned(ERR_MAX, ERR_W) then
+                    err_cnt <= err_cnt + 1;
+                  end if;
+                end if;
+
+                if cmp_idx = GV_E - 1 then
+                  -- last expected bit: `last` MUST coincide with it.
+                  if core_last /= '1' then
+                    frame_err <= '1';   -- ran long: no `last` at E-1
+                  end if;
+                  -- end of stream -> latch the verdict from accumulated state.
+                  -- err_cnt's combinational +1 this cycle is reflected via the
+                  -- mismatch test below (the registered err_cnt updates next
+                  -- edge, so re-test the current bit here for the verdict).
+                  if (core_eb = exp_bit(cmp_idx)) and (err_cnt = 0)
+                     and (core_last = '1') then
                     pass_f <= '1';
                     done_f <= '1';
                     chk    <= CH_PASS;
                   else
-                    fail_f <= '1';   -- ran long: no `last` at E-1
+                    fail_f <= '1';
                     done_f <= '1';
                     chk    <= CH_FAIL;
                   end if;
                   cmp_idx <= cmp_idx + 1;
                 else
-                  -- matched, not last yet: `last` arriving early is a failure.
+                  -- mid-stream: `last` arriving early is a framing error, but
+                  -- still keep counting / advancing to the end of the stream.
                   if core_last = '1' then
-                    fail_f <= '1';   -- short: `last` before E-1
-                    done_f <= '1';
-                    chk    <= CH_FAIL;
+                    frame_err <= '1';   -- short: `last` before E-1
                   end if;
                   cmp_idx <= cmp_idx + 1;
                 end if;
               else
-                -- more output than E bits expected -> failure.
-                fail_f <= '1';
-                done_f <= '1';
-                chk    <= CH_FAIL;
+                -- more output than E bits expected -> framing error; latch FAIL.
+                frame_err <= '1';
+                fail_f    <= '1';
+                done_f    <= '1';
+                chk       <= CH_FAIL;
               end if;
             end if;
 
@@ -417,20 +472,23 @@ begin
   run_hold <= '1' when run_hold_cnt /= 0 else '0';
 
   -- Line 2: hold RUNNING for the minimum display window, then show the latched
-  -- verdict; the heartbeat ('*'/' ') is always-on across all states. Each
-  -- branch is exactly 16 chars (padded).
+  -- verdict with the rendered error count; the heartbeat ('*'/' ') is always-on
+  -- in column 16 across all states. Each branch is exactly 16 chars:
+  --   "PASS err=000   *"  ("PASS err="=9 + NNN=3 + "   "=3 + hb=1)
+  --   "FAIL err=NNN   *"
+  --   "RUNNING        *"  (count not meaningful until the verdict latches)
+  -- The error count is spliced via uint_to_ascii(err_cnt, 3) (shared helper).
+  hb_chr  <= "*" when hb = '1' else " ";
+  err_str <= uint_to_ascii(err_cnt, 3);
+
   lcd_line2 <=
     -- still within the minimum RUNNING-display window: show RUNNING
-    "RUNNING *       " when (run_hold = '1' and hb = '1') else
-    "RUNNING         " when (run_hold = '1')              else
+    "RUNNING        " & hb_chr            when (run_hold = '1')   else
     -- verdict shown once the RUNNING window has elapsed
-    "PASS *          " when (pass_f = '1' and hb = '1')   else
-    "PASS            " when (pass_f = '1')                else
-    "FAIL *          " when (fail_f = '1' and hb = '1')   else
-    "FAIL            " when (fail_f = '1')                else
+    "PASS err=" & err_str & "   " & hb_chr when (pass_f = '1')    else
+    "FAIL err=" & err_str & "   " & hb_chr when (fail_f = '1')    else
     -- not done yet and window elapsed (e.g. a genuinely long/hung run)
-    "RUNNING *       " when (hb = '1')                    else
-    "RUNNING         ";
+    "RUNNING        " & hb_chr;
 
   u_lcd : hd44780_lcd
     generic map (
