@@ -1,0 +1,28 @@
+# SAW / Cryptol toolchain pin for proofs/cryptol.
+#
+# All fields used by scripts/CI to reconstruct the exact tools used
+# to discharge the CRC bit-level equivalence proof.
+#
+# Provenance of the SHA-256.
+# --------------------------
+# SAW does publish per-release tarballs at fixed URLs (unlike TLA+'s
+# rolling pre-release tag), but the project does not publish official
+# SHA-256 checksums on the release page. The hash below was computed
+# locally from the tarball downloaded on 2026-05-14; the verify-cryptol
+# CI step rejects any future download whose SHA-256 does not match,
+# which by design will trip if the upstream artifact changes. SHA-256
+# is the appropriate integrity primitive in 2026 (SHA-1 has had known
+# collision attacks since 2017).
+#
+# To rotate the pin (e.g. when adopting a newer SAW release):
+#   1. Download the tarball from the new release URL.
+#   2. Run `sha256sum saw-X.Y.tar.gz` and paste the new digest below.
+#   3. Update SAW_VERSION and SAW_TARBALL_URL to match the new tag.
+#   4. Re-run local verification after sourcing this file
+#      (e.g. `source proofs/cryptol/version.txt`), then run
+#      `bash scripts/check_proof_traceability.py` and the verify-cryptol
+#      steps from .github/workflows/ci.yml.
+SAW_VERSION=1.5
+CRYPTOL_VERSION=3.5.0
+SAW_TARBALL_URL=https://github.com/GaloisInc/saw-script/releases/download/v1.5/saw-1.5-ubuntu-24.04-X64-with-solvers.tar.gz
+SAW_TARBALL_SHA256=57733cd94fea740542e085d351f653e791e33569cd3836fbb544e28c9bbf72d4

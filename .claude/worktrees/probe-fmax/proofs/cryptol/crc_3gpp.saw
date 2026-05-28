@@ -1,0 +1,76 @@
+// SAW proof script: the C transliteration in calculate_crc_bits.c
+// produces bit-identical output to the Cryptol specification in
+// crc_3gpp.cry for the four 3GPP CRC polynomials at A = 16.
+//
+// Each of the four polynomial entry points (`crc24A_A16`, `crc24B_A16`,
+// `crc16_A16`, `crc8_A16`) is verified separately. SAW symbolically
+// executes the LLVM bitcode of each C function over a 16-bit symbolic
+// input, then asks Z3 to discharge the postcondition "output equals
+// the Cryptol spec's output". A failing instantiation would surface
+// as `error: ProofResult: ...` and abort the script.
+//
+// Invoke from CI / locally with:
+//   saw crc_3gpp.saw
+
+// ---------------------------------------------------------------------
+// Load the LLVM bitcode and the Cryptol specification.
+// ---------------------------------------------------------------------
+
+bc <- llvm_load_module "calculate_crc_bits.bc";
+import "crc_3gpp.cry";
+
+// ---------------------------------------------------------------------
+// Local helpers (idiomatic SAW pattern; lifted from
+// examples/llvm/dotprod_struct.saw in the SAW distribution).
+// ---------------------------------------------------------------------
+
+let alloc_init ty v = do {
+    p <- llvm_alloc ty;
+    llvm_points_to p v;
+    return p;
+};
+
+let ptr_to_fresh n ty = do {
+    x <- llvm_fresh_var n ty;
+    p <- alloc_init ty (llvm_term x);
+    return (x, p);
+};
+
+// ---------------------------------------------------------------------
+// Reusable proof template.
+//
+// `crc_spec cry_fn p_bits` constructs the SAW spec for "the C function
+// takes a 16-bit input and a P_bits-bit output buffer, runs to
+// completion, and writes the bits produced by the Cryptol function
+// `cry_fn` to that buffer". The 16-bit input is fully symbolic; SAW
+// with Z3 discharges the equality over all 2^16 inputs.
+// ---------------------------------------------------------------------
+
+let crc_spec cry_fn p_bits = do {
+    (a, a_ptr) <- ptr_to_fresh "a" (llvm_array 16 (llvm_int 8));
+    out_ptr <- llvm_alloc (llvm_array p_bits (llvm_int 8));
+    llvm_execute_func [a_ptr, out_ptr];
+    let expected = {{ cry_fn a }};
+    llvm_points_to out_ptr (llvm_term expected);
+};
+
+let prove_one fn_name cry_fn p_bits = do {
+    print (str_concat "Verifying " fn_name);
+    llvm_verify bc fn_name [] true (crc_spec cry_fn p_bits) z3;
+    return ();
+};
+
+// ---------------------------------------------------------------------
+// Discharge the four equivalence obligations.
+// ---------------------------------------------------------------------
+
+// The SAW spec wraps each (C, Cryptol) pair through the `_bytes` shim
+// so the bit-vs-byte representation difference is handled by Cryptol's
+// `bits_from_bytes` / `bytes_from_bits` and the equivalence stays
+// pointwise on the raw C array.
+prove_one "crc24A_A16" {{ crc24A_A16_bytes }} 24;
+prove_one "crc24B_A16" {{ crc24B_A16_bytes }} 24;
+prove_one "crc16_A16"  {{ crc16_A16_bytes  }} 16;
+prove_one "crc8_A16"   {{ crc8_A16_bytes   }} 8;
+
+print "All four CRC equivalence goals discharged.";

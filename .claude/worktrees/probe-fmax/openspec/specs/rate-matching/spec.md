@@ -1,0 +1,59 @@
+# rate-matching Specification
+
+## Purpose
+Defines subblock interleaving (TS36.212 §5.1.4.1.1) across three interleaver indices and the circular buffer with redundancy versions 0–3 and optional limited-buffer rate matching (§5.1.4.1.2), combined into the bit-pattern-invertible `rate_matching` operation used by the encoder and inverted by the decoder.
+## Requirements
+### Requirement: Subblock interleaving with three indices
+
+The system SHALL implement subblock interleaving as specified in §5.1.4.1.1 of TS36.212. For an input row vector `d` of length `D`, the interleaver SHALL:
+
+1. Choose the smallest `R_TC_subblock` such that `D ≤ R_TC_subblock * 32` and set `K_Pi = R_TC_subblock * 32`.
+2. Left-pad `d` with `N_D = K_Pi - D` `NaN` entries.
+3. For `subblock_interleaver_index ∈ {0, 1}`: reshape the padded sequence into a `R_TC_subblock × 32` row-major matrix, permute its columns using `P = [0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 14, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 27, 7, 23, 15, 31]`, and read out row-major.
+4. For `subblock_interleaver_index = 2`: let `y` denote the length-`K_Pi` left-padded input sequence produced by step 2. Produce `pi(k) = mod(P(floor(k / R_TC_subblock) + 1) + 32 * mod(k, R_TC_subblock) + 1, K_Pi)` for `k = 0..K_Pi - 1`, and return `y(pi + 1)`.
+
+The returned vector SHALL have length `K_Pi`, with the `NaN` filler propagated to the interleaved positions.
+
+#### Scenario: Output length is a multiple of 32
+- **WHEN** `subblock_interleaver(d, idx)` is called with any input length `D` and any supported index `idx`
+- **THEN** the returned vector has a length that is a multiple of 32 and is the smallest such length that is `≥ D`
+
+#### Scenario: Unsupported index
+- **WHEN** `subblock_interleaver` is called with `subblock_interleaver_index ∉ {0, 1, 2}`
+- **THEN** the call raises an error
+
+### Requirement: Circular buffer with redundancy versions and optional LBRM
+
+The system SHALL implement the circular buffer of §5.1.4.1.2 of TS36.212. The buffer SHALL accept a `3 × K_Pi` interleaved matrix `v` (where `K_Pi` is a multiple of 32) and produce a length-`E` row vector `e` by:
+
+1. Constructing `w` of length `K_w = 3 * K_Pi` by placing row 1 of `v` in positions `1..K_Pi` and interleaving rows 2 and 3 of `v` into the remaining positions (`w(K_Pi + 2k + 1) = v(2, k+1)`, `w(K_Pi + 2k + 2) = v(3, k+1)`).
+2. Setting `N_cb = K_w` when `I_LBRM = 0` and `N_cb = min(N_ref, K_w)` otherwise.
+3. Setting the starting offset `k_0 = R_TC_subblock * (2 * ceil(N_cb / (8 * R_TC_subblock)) * rv_idx + 2)`, where `R_TC_subblock = K_Pi / 32`.
+4. Reading `E` non-`NaN` values from `w` starting at index `mod(k_0 + j, N_cb) + 1` and advancing `j`, skipping `NaN` filler entries.
+
+The implementation SHALL raise an error if `v` does not have 3 rows, if `K_Pi` is not a multiple of 32, or if `rv_idx ∉ {0, 1, 2, 3}`.
+
+#### Scenario: Redundancy versions select different starting offsets (no LBRM)
+- **WHEN** the circular buffer is invoked with `I_LBRM = 0` (so `N_cb = K_w = 3 * K_Pi`) and the same `v` and `E` but different `rv_idx` values
+- **THEN** the four `rv_idx` values produce four distinct starting offsets `k_0` (modulo `N_cb`)
+
+#### Scenario: Redundancy version offset matches the standard formula
+- **WHEN** the circular buffer computes its starting offset for a given `(N_cb, R_TC_subblock, rv_idx)`
+- **THEN** the value of `k_0` equals `R_TC_subblock * (2 * ceil(N_cb / (8 * R_TC_subblock)) * rv_idx + 2)` (note: under LBRM with a small `N_ref`, distinct `rv_idx` values MAY collapse to the same `k_0` modulo `N_cb` — this is the standard's behavior, not a defect)
+
+#### Scenario: Filler bits are skipped
+- **WHEN** the circular buffer reads from a window that contains `NaN` filler entries
+- **THEN** the output `e` has length exactly `E` and contains no `NaN` values
+
+#### Scenario: Invalid rv_idx
+- **WHEN** `circular_buffer` is called with `rv_idx ∉ {0, 1, 2, 3}`
+- **THEN** the call raises an error
+
+### Requirement: Combined rate matching produces invertible bit-position pattern
+
+The combined rate-matching helper SHALL validate that the encoded input matrix has the three rows expected by TS36.212 before indexing the systematic and parity streams.
+
+#### Scenario: Invalid rate-matching input row count
+- **WHEN** `rate_matching(d, N_ref, I_LBRM, rv_idx, E)` is called with `size(d, 1) != 3`
+- **THEN** the call raises `rate_matching:bad_d_rows`
+
