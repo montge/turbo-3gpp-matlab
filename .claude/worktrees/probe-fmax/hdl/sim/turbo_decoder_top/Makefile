@@ -1,0 +1,43 @@
+TOPLEVEL_LANG ?= vhdl
+SIM ?= ghdl
+
+TOPLEVEL := turbo_decoder_top
+COCOTB_TEST_MODULES := test_turbo_decoder_top
+
+# Package + reused sub-cores before the integrating top (GHDL elaboration
+# order). turbo_decoder_top wraps the UNMODIFIED P1 constituent_decoder plus
+# qpp_rom (+pkg) and qpp_interleaver (same reuse pattern as turbo_encode_top).
+VHDL_SOURCES := $(PWD)/../../rtl/qpp_rom_pkg.vhd \
+                $(PWD)/../../rtl/qpp_rom.vhdl \
+                $(PWD)/../../rtl/qpp_interleaver.vhdl \
+                $(PWD)/../../rtl/constituent_decoder.vhdl \
+                $(PWD)/../../rtl/turbo_decoder_top.vhdl
+EXTRA_ARGS += --std=08
+
+# MAX_ITERATIONS is an ELABORATION-TIME generic (H = 2*MAX_ITERATIONS half-
+# iterations). The golden CSV mixes two max_iter values (2 and 8), so the lane
+# is run once per generic value: each pass overrides -gMAX_ITERATIONS and the
+# cocotb test (via the MAX_ITER env var) filters the CSV to the rows whose
+# max_iter matches. `make` (default target below) runs both passes; a single
+# pass can be run directly with e.g. `make MAX_ITER=8 sim`.
+MAX_ITER ?= 8
+SIM_ARGS += -gMAX_ITERATIONS=$(MAX_ITER)
+SIM_ARGS += --vcd=turbo_decoder_top_h$(MAX_ITER).vcd
+export MAX_ITER
+
+# Default target: run every distinct max_iter group present in the CSV. Each
+# group is a clean sub-make (fresh sim_build) so the elaborated generic and the
+# results.xml do not leak between passes.
+MAX_ITER_GROUPS := 2 8
+
+.PHONY: all_groups
+all_groups:
+	@rc=0; \
+	for mi in $(MAX_ITER_GROUPS); do \
+	  echo "──────── turbo_decoder_top: MAX_ITERATIONS=$$mi ────────"; \
+	  rm -rf $(PWD)/sim_build $(PWD)/results.xml; \
+	  $(MAKE) -f $(firstword $(MAKEFILE_LIST)) MAX_ITER=$$mi sim || rc=1; \
+	done; \
+	exit $$rc
+
+include $(shell cocotb-config --makefiles)/Makefile.sim
