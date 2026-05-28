@@ -96,9 +96,15 @@ entity turbo_decoder_top is
     -- FALSE keep the build bit-exact to the existing golden vectors. ANCHOR_NORM
     -- = anchor (state-1) per-step normalization instead of the 8-way max-norm;
     -- BAL_TREE_FOLD = balanced max-tree extrinsic fold (only effective when
-    -- EXACT_LOGMAP=false, which this Max-Log-MAP top always uses).
+    -- EXACT_LOGMAP=false, which this Max-Log-MAP top always uses); PIPE_DFOLD =
+    -- pipeline the S_BWD delta-fold one stage (the path-(2) limiter, design.md
+    -- 2c). PIPE_DFOLD is a pure +1-cycle x_e latency change: the reverse-stream
+    -- capture down-counter below (cap_idx, started on the first cd_out_valid)
+    -- is transparent to it -- out_valid still pulses once per column, the same
+    -- N beats appear, and out_last still marks the index-0 column.
     ANCHOR_NORM    : boolean := false;
-    BAL_TREE_FOLD  : boolean := false
+    BAL_TREE_FOLD  : boolean := false;
+    PIPE_DFOLD     : boolean := false
   );
   port (
     clk       : in  std_logic;
@@ -157,7 +163,8 @@ architecture rtl of turbo_decoder_top is
       N_MAX   : integer := 6147;
       EXACT_LOGMAP  : boolean := false;
       ANCHOR_NORM   : boolean := false;
-      BAL_TREE_FOLD : boolean := false
+      BAL_TREE_FOLD : boolean := false;
+      PIPE_DFOLD    : boolean := false
     );
     port (
       clk       : in  std_logic;
@@ -450,7 +457,8 @@ begin
   u_cd : constituent_decoder
     generic map (W_IN => W_IN, W_GAMMA => W_GAMMA, W_AB => W_AB,
                  W_DELTA => W_DELTA, W_XE => W_XE, W_K => W_K, N_MAX => N_MAX,
-                 ANCHOR_NORM => ANCHOR_NORM, BAL_TREE_FOLD => BAL_TREE_FOLD)
+                 ANCHOR_NORM => ANCHOR_NORM, BAL_TREE_FOLD => BAL_TREE_FOLD,
+                 PIPE_DFOLD => PIPE_DFOLD)
     port map (clk => clk, rst => rst, start => cd_start, k_in => cd_k,
               in_valid => cd_in_valid, x_a_in => cd_xa, z_a_in => cd_za,
               out_valid => cd_out_valid, out_last => cd_out_last,

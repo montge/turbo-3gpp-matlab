@@ -188,7 +188,36 @@ entity constituent_decoder is
     -- non-associative max* seed-from-first order is a pinned bit-exact
     -- contract, design.md 4 of the M1 change), so the effective predicate is
     -- (BAL_TREE_FOLD and not EXACT_LOGMAP).
-    BAL_TREE_FOLD : boolean := false
+    BAL_TREE_FOLD : boolean := false;
+    -- ===================================================================
+    -- PIPE_DFOLD (add-fpga-decoder-recurrence-pipelining, stage 1c task 1.1)
+    -- ===================================================================
+    -- Default FALSE => the S_BWD extrinsic path is SINGLE-CYCLE: at column
+    -- kidx the alpha read + 16-delta sat_add front + gather + fold (serial or
+    -- tree) + sat_sub all happen in the SAME cycle that emits x_e(kidx). This
+    -- long feed-forward cone (alpha read -> sat_add front -> | -> tree/fold ->
+    -- sat_sub -> xe_r) is path (2), the S_BWD limiter (design.md 2c).
+    --   TRUE => PIPELINE the delta-fold across TWO cycles, cutting that cone at
+    -- its midpoint. STAGE A (cycle k): compute the 16 deltas and gather
+    -- d0buf/d1buf exactly as today, then REGISTER them (d0_r/d1_r) along with a
+    -- 1-cycle-delayed output-valid (dfold_v_r) and the column-0 last flag
+    -- (dfold_ol_r). STAGE B (cycle k+1): reduce the REGISTERED d0_r/d1_r (same
+    -- serial-fold/tree predicate) -> xe_r, asserting ov from dfold_v_r and ol
+    -- from dfold_ol_r. The beta recurrence keeps its per-cycle cadence
+    -- (UNCHANGED -- it is independent of the fold output); only the x_e/ov/ol
+    -- OUTPUT STREAM shifts ONE cycle later. The decoded x_e VALUES are
+    -- IDENTICAL to the unpipelined core (pure timing/latency change), so the
+    -- golden vectors stay byte-identical: a uniform +1-cycle latency with the
+    -- SAME beat count (N) and SAME out_last alignment (logical column 0) is
+    -- transparent to the value-sequence compare and to turbo_decoder_top's
+    -- reverse-stream down-counter capture. END-OF-SWEEP DRAIN: because column
+    -- 0's stage-A lands the cycle kidx=0 is processed, its x_e emerges the
+    -- NEXT cycle, so a one-cycle S_BWD_DRAIN state emits the final registered
+    -- x_e/ov/ol (ol from dfold_ol_r) before S_DONE. Total beats stay exactly
+    -- N = K+3, done still pulses once. ORTHOGONAL to ANCHOR_NORM/BAL_TREE_FOLD/
+    -- EXACT_LOGMAP (it only re-times the existing fold; the fold itself and the
+    -- max* correction are unchanged).
+    PIPE_DFOLD : boolean := false
   );
   port (
     clk       : in  std_logic;
@@ -356,13 +385,31 @@ architecture rtl of constituent_decoder is
   signal alpha_l1  : state_vec := (others => 0);   -- forwarded alpha(:,Nr-1)
   signal bwd_first : std_logic := '0';             -- first backward column?
 
-  type state_t is (S_IDLE, S_LOAD, S_FWD, S_BWD_PRIME, S_BWD, S_DONE);
+  -- S_BWD_DRAIN: the PIPE_DFOLD-only drain beat. With the +1-cycle fold
+  -- latency, column 0's stage-A is computed the cycle kidx=0 is processed, so
+  -- its x_e/ov/ol emerge one cycle later -- this state emits that final beat
+  -- (with ol from dfold_ol_r) before S_DONE. When PIPE_DFOLD=false the FSM
+  -- never enters it (S_BWD goes straight to S_DONE as before).
+  type state_t is (S_IDLE, S_LOAD, S_FWD, S_BWD_PRIME, S_BWD, S_BWD_DRAIN, S_DONE);
   signal st   : state_t := S_IDLE;
   signal Nr   : integer range 0 to N_MAX := 0;   -- N = K+3
   signal kidx : integer range 0 to N_MAX := 0;   -- step counter
 
   signal ov, ol, bsy, dn : std_logic := '0';
   signal xe_r : integer := 0;
+
+  -- PIPE_DFOLD pipeline registers (stage A -> stage B). When PIPE_DFOLD=false
+  -- these are never written/read on the bit-exact path; synthesis prunes them.
+  --   d0_r/d1_r  : the gathered x=0 / x=1 transition deltas registered in
+  --                stage A (cycle k), reduced in stage B (cycle k+1).
+  --   dfold_v_r  : stage-A produced a valid column this cycle (-> stage B emits
+  --                ov next cycle). Cleared at sweep start so the first stage-B
+  --                cycle (which has no prior column) emits nothing.
+  --   dfold_ol_r : the registered out_last condition for that column (was it
+  --                kidx=0) -> drives ol in stage B.
+  signal d0_r, d1_r   : delta8_t := (others => 0);
+  signal dfold_v_r    : std_logic := '0';
+  signal dfold_ol_r   : std_logic := '0';
 
   -- Saturating helpers (scalar, signed integer, clamp - no wrap).
   function sat_add(a, b, lo, hi : integer) return integer is
@@ -454,6 +501,25 @@ architecture rtl of constituent_decoder is
     return l1;
   end function;
 
+  -- Reduce one x-set's 8 deltas to its max (the extrinsic fold body, factored
+  -- so the single-cycle path and the PIPE_DFOLD stage-B share ONE definition).
+  -- Predicate identical to the inline fold: BAL_TREE_FOLD (and only when
+  -- EXACT_LOGMAP=false) uses the associative balanced max-tree (bit-identical
+  -- to the serial fold there); otherwise the SEQUENTIAL LEFT FOLD seeded from
+  -- the first delta in ascending transition index (the pinned max* order).
+  function fold8(d : delta8_t) return integer is
+    variable mx : integer;
+  begin
+    if BAL_TREE_FOLD and not EXACT_LOGMAP then
+      return tree_max8(d);
+    end if;
+    mx := d(1);                          -- seed from the first delta
+    for i in 2 to STATES loop
+      mx := maxstar(mx, d(i), DE_MIN, DE_MAX);
+    end loop;
+    return mx;
+  end function;
+
   -- gamma(t) = -x*xbit(t) - z*zbit(t), in W_GAMMA (no sat needed:
   -- |gamma| <= |x|+|z| < 2^W_IN <= 2^(W_GAMMA-1)).
   function gamma_of(t : integer; x, z : integer) return integer is
@@ -514,12 +580,8 @@ begin
     variable xq, zq  : integer;
     variable ab_sum  : integer;
     variable delta   : integer;
-    variable max0    : integer;
-    variable max1    : integer;
-    variable started0 : boolean;   -- extrinsic fold: seeded the x=0 set?
-    variable started1 : boolean;   -- extrinsic fold: seeded the x=1 set?
-    variable d0buf   : delta8_t;   -- BAL_TREE_FOLD: gathered x=0 deltas
-    variable d1buf   : delta8_t;   -- BAL_TREE_FOLD: gathered x=1 deltas
+    variable d0buf   : delta8_t;   -- gathered x=0 deltas (fold/register input)
+    variable d1buf   : delta8_t;   -- gathered x=1 deltas (fold/register input)
     variable n0, n1  : integer;    -- fill counters for the two x-sets
   begin
     if rising_edge(clk) then
@@ -677,6 +739,9 @@ begin
               a_raddr  <= Nr - 2;
               in_raddr <= Nr - 2;
             end if;
+            -- Prime the PIPE_DFOLD pipeline empty: the FIRST S_BWD cycle's
+            -- stage B has no prior column to emit, so its valid must be low.
+            dfold_v_r <= '0';
             st <= S_BWD;
 
           -- BACKWARD + EXTRINSIC: at column kidx use the stored alpha(:,kidx)
@@ -686,6 +751,21 @@ begin
           when S_BWD =>
             xq := to_integer(signed(xa_rd));
             zq := to_integer(signed(za_rd));
+
+            -- ===== PIPE_DFOLD STAGE B (emit the PREVIOUS column's x_e) =====
+            -- Reduce the deltas registered in the prior cycle's stage A and
+            -- emit x_e one cycle late. dfold_v_r gates the very first S_BWD
+            -- cycle (which has no prior column) to emit nothing. Stage B runs
+            -- BEFORE stage A's writes below, but they touch disjoint targets
+            -- (xe_r/ov/ol here; d0_r/d1_r/dfold_*_r in stage A), so order is
+            -- immaterial. Default (PIPE_DFOLD=false): this block is dead.
+            if PIPE_DFOLD then
+              if dfold_v_r = '1' then
+                xe_r <= sat_sub(fold8(d0_r), fold8(d1_r), XE_MIN, XE_MAX);
+                ov   <= '1';
+                ol   <= dfold_ol_r;
+              end if;
+            end if;
 
             -- ---- extrinsic at column kidx (uses beta_cur = beta(:,kidx)).
             -- For the first backward column (just written) use the forwarded
@@ -714,41 +794,29 @@ begin
                 d1buf(n1) := delta;
               end if;
             end loop;
-            -- Reduce each x-set. Default / EXACT_LOGMAP: the SEQUENTIAL LEFT
-            -- FOLD seeded from the first delta in ascending transition index --
-            -- max* is NOT associative under EXACT_LOGMAP, so this order is a
-            -- pinned bit-exact contract (design.md §4). BAL_TREE_FOLD (and ONLY
-            -- when EXACT_LOGMAP=false): a balanced 3-level binary max-tree;
-            -- since maxstar degenerates to associative imax there, the tree is
-            -- bit-identical to the serial fold (design.md §2a). The tree is
-            -- FORCIBLY DISABLED under EXACT_LOGMAP to preserve the pinned order.
-            if BAL_TREE_FOLD and not EXACT_LOGMAP then
-              max0 := tree_max8(d0buf);
-              max1 := tree_max8(d1buf);
+            -- ===== EXTRINSIC FOLD =====
+            -- PIPE_DFOLD=false (default): single-cycle -- reduce the just-built
+            -- d0buf/d1buf (serial fold or balanced tree, via fold8) and emit
+            -- x_e(kidx) THIS cycle. Byte-identical to the prior inline fold.
+            --   PIPE_DFOLD=true: STAGE A -- only REGISTER the gathered deltas
+            -- (d0_r/d1_r) + a valid/last flag; the reduce + emit happen next
+            -- cycle in stage B above. The long alpha-read -> sat_add front ->
+            -- | -> fold -> sat_sub cone is thus cut at the fold midpoint.
+            if PIPE_DFOLD then
+              d0_r       <= d0buf;
+              d1_r       <= d1buf;
+              dfold_v_r  <= '1';
+              if kidx = 0 then
+                dfold_ol_r <= '1';
+              else
+                dfold_ol_r <= '0';
+              end if;
             else
-              max0 := DE_MIN;
-              max1 := DE_MIN;
-              started0 := false;
-              started1 := false;
-              for i in 1 to STATES loop
-                if not started0 then
-                  max0 := d0buf(i);          -- seed from first x=0 delta
-                  started0 := true;
-                else
-                  max0 := maxstar(max0, d0buf(i), DE_MIN, DE_MAX);
-                end if;
-                if not started1 then
-                  max1 := d1buf(i);          -- seed from first x=1 delta
-                  started1 := true;
-                else
-                  max1 := maxstar(max1, d1buf(i), DE_MIN, DE_MAX);
-                end if;
-              end loop;
-            end if;
-            xe_r <= sat_sub(max0, max1, XE_MIN, XE_MAX);
-            ov   <= '1';
-            if kidx = 0 then
-              ol <= '1';
+              xe_r <= sat_sub(fold8(d0buf), fold8(d1buf), XE_MIN, XE_MAX);
+              ov   <= '1';
+              if kidx = 0 then
+                ol <= '1';
+              end if;
             end if;
 
             -- ---- compute beta(:,kidx-1) for the next cycle (if any).
@@ -788,8 +856,29 @@ begin
               end if;
               kidx <= kidx - 1;
             else
-              st  <= S_DONE;
+              -- kidx = 0: column 0's stage work is done this cycle.
+              -- PIPE_DFOLD=false: x_e(0) was emitted THIS cycle -> done.
+              -- PIPE_DFOLD=true: x_e(0) is still in the stage-A registers
+              -- (dfold_v_r='1', dfold_ol_r='1'); drain it one more cycle.
+              if PIPE_DFOLD then
+                st <= S_BWD_DRAIN;
+              else
+                st <= S_DONE;
+              end if;
             end if;
+
+          -- BACKWARD DRAIN (PIPE_DFOLD only): emit the final registered x_e
+          -- (column 0) with out_last, then finish. This makes the pipelined
+          -- sweep emit EXACTLY N beats (Nr-1 .. 0) with out_last on column 0,
+          -- identical in count + alignment to the unpipelined sweep -- only
+          -- shifted one cycle. The beta recurrence has already terminated
+          -- (kidx hit 0), so nothing else runs here.
+          when S_BWD_DRAIN =>
+            xe_r <= sat_sub(fold8(d0_r), fold8(d1_r), XE_MIN, XE_MAX);
+            ov   <= '1';
+            ol   <= dfold_ol_r;          -- '1' (the column-0 last flag)
+            dfold_v_r <= '0';
+            st   <= S_DONE;
 
           when S_DONE =>
             bsy <= '0';

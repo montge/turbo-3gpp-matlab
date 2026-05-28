@@ -25,6 +25,20 @@ common case (no new reference).
   instead of the 8-way max in both α and β. Output-equivalent: x_e / decoded
   bits identical with both opts enabled across all four lanes; threaded into
   turbo_decoder_top.)
+- [x] 1.1c (stage 1c) **Pipeline the `S_BWD` feed-forward δ-fold** one stage
+  behind a generic defaulting to the current single-cycle path (design.md §2c;
+  the probe showed this lifts Fmax 19.14 → 26.31 MHz, the δ-fold being the
+  limiter). Generic `PIPE_DFOLD : boolean := false`; true → STAGE A registers
+  the gathered d0/d1 deltas (+ valid/last flags), STAGE B reduces them and
+  emits x_e one cycle later; a one-cycle `S_BWD_DRAIN` state emits the final
+  (column-0) beat. Pure +1-cycle x_e LATENCY change — decoded x_e VALUES
+  identical, exactly N=K+3 beats, out_last on column 0 unchanged → golden
+  vectors byte-identical. Threaded into turbo_decoder_top (the reverse-stream
+  capture down-counter is transparent to the uniform +1 latency). VERIFIED:
+  constituent_decoder lane (27/27) + turbo_decoder_top lane (10+10 frames, both
+  MAX_ITER groups) PASS with `-gPIPE_DFOLD=true` AND with all three levers
+  (`PIPE_DFOLD+ANCHOR_NORM+BAL_TREE_FOLD`) enabled, against the SAME golden
+  vectors; default path byte-identical (all four lanes green).
 - [ ] 1.3 Synthesize `turbo_decoder_top` (board K) under Quartus II 13.0sp1 with
   the optimizations enabled; **record restricted Fmax + the new worst-case path**.
 - [ ] 1.4 **GATE:** proceed only if Fmax ≥ ~1.5× the 14.25 MHz baseline
