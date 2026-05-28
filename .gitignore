@@ -72,3 +72,9 @@ proofs/tla/MC.tla
 proofs/cryptol/*.bc
 proofs/cryptol/saw.out
 build/
+
+# Vivado scratch (logs, journal, DFXRuntime profiles, .Xil dirs)
+hdl/boards/kr260/.Xil/
+hdl/boards/kr260/*.jou
+hdl/boards/kr260/*.log
+hdl/boards/kr260/dfx_runtime.txt

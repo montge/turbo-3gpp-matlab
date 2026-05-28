@@ -39,19 +39,46 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
 
 ## 2. Clocking (design.md §3)
 
-- [ ] 2.1 Bring a PL clock + reset into the fabric: default = a minimal Zynq
+- [x] 2.1 Bring a PL clock + reset into the fabric: default = a minimal Zynq
   MPSoC PS block design exposing `pl_clk0` (~100 MHz target) + `pl_resetn0`, NO
   AXI (or a Clocking Wizard off a carrier clock if the KR260 routes one — confirm
-  from the schematic). Regenerable from TCL.
+  from the schematic). Regenerable from TCL. **DONE:** `kr260_create_clocking_bd`
+  proc in `hdl/boards/kr260/turbo_decoder_kr260_synth.tcl` creates a BD with
+  `zynq_ultra_ps_e_0` (K26 board preset, all AXI M/S disabled,
+  `PSU__FPGA_PL0_ENABLE=1`, `PSU__CRL_APB__PL0_REF_CTRL__FREQMHZ=100`) +
+  `proc_sys_reset_0` (slowest_sync_clk ← pl_clk0; ext_reset_in ← pl_resetn0);
+  BD output ports `pl_clk0` + `pl_resetn0` (the proc_sys_reset's
+  `peripheral_aresetn`); `make_wrapper -import` generates
+  `kr260_clocking_wrapper`. Re-runnable (clobbers prior BD/proj). Selectable
+  via `-mode bd_only` for sanity (validate_bd_design) without paying a
+  bitstream cost.
 
 ## 3. Self-check wrapper + constraints
 
-- [ ] 3.1 Port the DE2 self-check FSM + on-chip golden ROM into a new
+- [x] 3.1 Port the DE2 self-check FSM + on-chip golden ROM into a new
   `turbo_decoder_kr260_top` (reuse the comparator / err-count / verdict logic;
-  swap the Altera PLL + pin names for the §2 clock and KR260 LEDs).
-- [ ] 3.2 Write the `.xdc`: PL clock period constraint + LED/reset LOC +
+  swap the Altera PLL + pin names for the §2 clock and KR260 LEDs). **DONE:**
+  `hdl/boards/kr260/turbo_decoder_kr260_top.vhdl`. Ports: ONLY `LEDS(1 downto
+  0)` (clock + reset come from the BD wrapper inside). Self-check FSM
+  (CH_RESET/START/LOAD/RUN/PASS/FAIL), err_cnt comparator, frame_err, run_hold
+  timer, heartbeat counter all ported VERBATIM from
+  `hdl/boards/de2/turbo_decoder_de2_top.vhdl`. Golden ROM
+  `turbo_decoder_golden_pkg` REUSED unchanged. Core `turbo_decoder_top`
+  instantiated with `K_MAX=512, MAX_ITERATIONS=2, ANCHOR_NORM/BAL_TREE_FOLD/
+  PIPE_DFOLD=true` (same recurrence-pipelined cores as the DE2 25 MHz build).
+  Two-LED encoding: LEDS(0) = blink (running) → solid (PASS) → off (FAIL);
+  LEDS(1) = solid only on FAIL. Restart edge synthesized off the PS reset
+  release (single-shot per power-cycle, OK'd for v1).
+- [x] 3.2 Write the `.xdc`: PL clock period constraint + LED/reset LOC +
   IOSTANDARD, with pin LOCs **confirmed against the KR260 board documentation**
-  (do not guess — the DE2 pin-table discipline).
+  (do not guess — the DE2 pin-table discipline). **DONE:**
+  `hdl/boards/kr260/turbo_decoder_kr260.xdc`. `create_clock -name pl_clk0
+  -period 10.000` on the BD wrapper's pl_clk0 pin (belt-and-suspenders vs the
+  IP-declared clock; guarded by `[llength [get_pins -quiet ...]]>0` so the
+  same xdc is harmless in OOC sub-runs); `LEDS[0]` → pin F8 LVCMOS18 (User_led
+  [0] = som240_1_d13), `LEDS[1]` → pin E8 LVCMOS18 (User_led[1] = som240_1_d14)
+  from the kr260_carrier connection_map → kr260_som part0_pins. No
+  set_false_paths needed (no async top-level inputs).
 - [ ] 3.3 A KR260 self-check **GHDL/cocotb sim lane** (template: the DE2 self-
   check lane with the PLL sim model replaced by a plain divided/again clock)
   reaches the PASS verdict on the golden vector and FAIL on a corrupt index.
