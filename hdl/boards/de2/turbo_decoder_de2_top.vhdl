@@ -99,7 +99,7 @@ architecture rtl of turbo_decoder_de2_top is
   constant W_EXT : integer := 12;
   constant W_K   : integer := 13;
 
-  component pll_12p5 is
+  component pll_25 is
     port (
       areset : in  std_logic := '0';
       inclk0 : in  std_logic;
@@ -119,7 +119,12 @@ architecture rtl of turbo_decoder_de2_top is
       W_ACC   : integer := 14;
       W_K     : integer := 13;
       K_MAX   : integer := 6144;
-      MAX_ITERATIONS : integer := 8
+      MAX_ITERATIONS : integer := 8;
+      -- Recurrence-pipelining throughput levers (default false in the core;
+      -- this demo enables all three to run the board at 25 MHz, bit-exact).
+      ANCHOR_NORM    : boolean := false;
+      BAL_TREE_FOLD  : boolean := false;
+      PIPE_DFOLD     : boolean := false
     );
     port (
       clk       : in  std_logic;
@@ -234,7 +239,7 @@ architecture rtl of turbo_decoder_de2_top is
   -- each KEY0 restart, holds the LCD's RUNNING *display* for at least that long
   -- before the real PASS/FAIL verdict is shown. It only gates the LCD string;
   -- the verdict/LED/7-seg path (pass_f/fail_f/done_f) is UNCHANGED.
-  constant CLK_HZ      : integer := 12_500_000;
+  constant CLK_HZ      : integer := 25_000_000;
   -- ~1.5 s on the board; a TB may override small (RUN_HOLD_CYC_OVR >= 0) so
   -- the verdict line reaches the LCD within the sim budget. Default keeps 1.5 s.
   function run_hold_cycles return integer is
@@ -277,7 +282,7 @@ begin
   ---------------------------------------------------------------------------
   -- PLL: derive the ~12.5 MHz functional clock from CLOCK_50 (CLOCK_50 / 4).
   ---------------------------------------------------------------------------
-  u_pll : pll_12p5
+  u_pll : pll_25
     port map (
       areset => '0',
       inclk0 => CLOCK_50,
@@ -292,7 +297,13 @@ begin
   u_core : turbo_decoder_top
     generic map (
       K_MAX          => DEMO_K_MAX,
-      MAX_ITERATIONS => GV_MAX_ITER
+      MAX_ITERATIONS => GV_MAX_ITER,
+      -- 25 MHz board build: enable the bit-exact recurrence-pipelining levers
+      -- (anchor norm + balanced-tree fold + pipelined delta-fold). Decoded bits
+      -- are identical to the 12.5 MHz build; only Fmax (and x_e latency) change.
+      ANCHOR_NORM    => true,
+      BAL_TREE_FOLD  => true,
+      PIPE_DFOLD     => true
     )
     port map (
       clk       => clk,
@@ -536,7 +547,7 @@ begin
 
   u_lcd : hd44780_lcd
     generic map (
-      CLK_HZ => 12_500_000          -- the decoder demo's PLL-derived clock
+      CLK_HZ => 25_000_000          -- the decoder demo's PLL-derived clock
     )
     port map (
       clk      => clk,

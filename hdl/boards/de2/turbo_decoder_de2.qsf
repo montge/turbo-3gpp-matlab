@@ -8,10 +8,12 @@
 # board, but they MUST be cross-checked against the Terasic DE2 user manual
 # before programming real hardware (the gated stage-4 task).
 #
-# The whole demo runs on a PLL-derived ~12.5 MHz clock (CLOCK_50 / 4 via the
-# altpll wrapper pll_12p5.vhdl) -- the iterative decoder's pre-existing
-# ~64.8 ns forward alpha-recurrence cone caps Fmax at 15.43 MHz, so the 80 ns
-# (12.5 MHz) period clears it with margin (Option A). See turbo_decoder_de2.sdc.
+# The whole demo runs on a PLL-derived 25 MHz clock (CLOCK_50 / 2 via the
+# altpll wrapper pll_25.vhdl). With the recurrence-pipelining throughput levers
+# enabled (ANCHOR_NORM + BAL_TREE_FOLD + PIPE_DFOLD), the decoder's restricted
+# Fmax is 27.63 MHz, so the 40 ns (25 MHz) period closes with ~2.6 MHz margin --
+# replacing the prior divide-by-4 (12.5 MHz) Option-A workaround. The decoded
+# bits are bit-exact to the 12.5 MHz build. See turbo_decoder_de2.sdc.
 
 set_global_assignment -name FAMILY "Cyclone II"
 set_global_assignment -name DEVICE EP2C35F672C6
@@ -23,14 +25,14 @@ set_global_assignment -name VHDL_INPUT_VERSION VHDL_2008
 # --- Source files: iterative turbo-decoder RTL (unmodified) + shared QPP +
 #     altpll PLL wrapper (synthesis) + shared hex decoder + board golden ROM +
 #     board wrapper. hex7seg is referenced, not copied. The SIM PLL divider
-#     (pll_12p5_sim.vhdl) is NOT listed here -- it is a GHDL-only stand-in. ---
+#     (pll_25_sim.vhdl) is NOT listed here -- it is a GHDL-only stand-in. ---
 set_global_assignment -name VHDL_FILE ../../rtl/qpp_rom_pkg.vhd
 set_global_assignment -name VHDL_FILE ../../rtl/qpp_rom.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/qpp_interleaver.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/constituent_decoder.vhdl
 set_global_assignment -name VHDL_FILE ../../rtl/turbo_decoder_top.vhdl
-set_global_assignment -name VHDL_FILE pll_12p5_mf.vhd
-set_global_assignment -name VHDL_FILE pll_12p5.vhdl
+set_global_assignment -name VHDL_FILE pll_25_mf.vhd
+set_global_assignment -name VHDL_FILE pll_25.vhdl
 set_global_assignment -name VHDL_FILE ../hex7seg.vhdl
 set_global_assignment -name VHDL_FILE ../lcd_format_pkg.vhdl
 set_global_assignment -name VHDL_FILE ../hd44780_lcd.vhdl
