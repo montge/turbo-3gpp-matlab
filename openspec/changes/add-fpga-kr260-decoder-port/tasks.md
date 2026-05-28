@@ -14,18 +14,28 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
 - [x] 0.2 `npx openspec validate add-fpga-kr260-decoder-port --strict` +
   `--all --strict` pass (35/35).
 
-## 1. Toolchain + project skeleton (GATED on Vivado install — user-driven)
+## 1. Toolchain + project skeleton
 
-- [ ] 1.1 Install AMD Vivado ML Standard (license-free, Kria-capable) + the
-  KR260/K26 board files; pin the exact version + device `xck26-sfvc784-2LV-c` in
-  `project_fpga_toolchain.md` (the Quartus 13.0sp1 analog).
-- [ ] 1.2 Create a reproducible **TCL build script** (not the binary `.xpr`)
-  targeting `xck26-sfvc784-2LV`; add the shared core sources
-  (`turbo_decoder_top` + sub-cores + golden ROM pkg). Confirm a bare
-  synth/elaborate of `turbo_decoder_top` runs clean in Vivado (no board glue).
-- [ ] 1.3 Re-verify Xilinx **BRAM inference** on the loop memories (Altera
-  `ramstyle="M4K"` attrs are inert here); add `ram_style` Xilinx attrs only if
-  Vivado scatters them to LUTRAM.
+- [x] 1.1 Install AMD Vivado + the KR260/K26 board files; pin the exact version
+  + device. **DONE (2026-05-28):** Vivado **2025.2.1** at
+  `D:\AMDDesignTools\2025.2.1\Vivado\bin\vivado.bat` (user installed on D:, not
+  on PATH — invoke by full path); KR260 board files installed (confirmed via
+  user's GUI project: `BoardPart="xilinx.com:kr260_som:part0:1.1"`). Device
+  `xck26-sfvc784-2LV-c`. Pinned in `project_fpga_toolchain.md`.
+- [x] 1.2 Create a reproducible **TCL build script** (not the binary `.xpr`)
+  targeting `xck26-sfvc784-2LV`. **DONE:**
+  `hdl/boards/kr260/turbo_decoder_kr260_synth.tcl` (committed artifact; the
+  `.xpr` lives at `C:\Users\montg\project_1\` as user's scratch). Bare OOC
+  synth of `turbo_decoder_top` with all three recurrence levers on
+  (`ANCHOR_NORM`/`BAL_TREE_FOLD`/`PIPE_DFOLD`), K_MAX=512, MAX_ITER=2: **0
+  errors, 0 critical warnings**. Logic: 7,019 LUTs (5.99%), 1,866 FFs (0.80%),
+  561 CARRY8s, 0 DSP — tiny vs DE2's 38% LE.
+- [x] 1.3 Re-verify Xilinx **BRAM inference** on the loop memories. **DONE:**
+  **9 BRAM / 144 (6.25%), 100% inferred to RAMB36E2/RAMB18E2**, zero LUTRAM
+  fallback — Vivado infers Block RAM correctly with NO Xilinx-specific hints
+  (the Altera `ramstyle="M4K"` attrs are inert and harmless). `alpha_mem` =
+  3× RAMB36E2 + 1× RAMB18E2; `ca/ce/chs/xpa/xpe/za/zpa_mem`, `xa/za_mem`
+  (constituent input), and `qpp_rom` each inferred to RAMB18E2.
 
 ## 2. Clocking (design.md §3)
 

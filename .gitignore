@@ -71,3 +71,4 @@ proofs/tla/MC.tla
 # SAW progress logs).
 proofs/cryptol/*.bc
 proofs/cryptol/saw.out
+build/
