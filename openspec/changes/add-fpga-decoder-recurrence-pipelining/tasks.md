@@ -39,11 +39,15 @@ common case (no new reference).
   MAX_ITER groups) PASS with `-gPIPE_DFOLD=true` AND with all three levers
   (`PIPE_DFOLD+ANCHOR_NORM+BAL_TREE_FOLD`) enabled, against the SAME golden
   vectors; default path byte-identical (all four lanes green).
-- [ ] 1.3 Synthesize `turbo_decoder_top` (board K) under Quartus II 13.0sp1 with
+- [x] 1.3 Synthesize `turbo_decoder_top` (board K) under Quartus II 13.0sp1 with
   the optimizations enabled; **record restricted Fmax + the new worst-case path**.
-- [ ] 1.4 **GATE:** proceed only if Fmax ≥ ~1.5× the 14.25 MHz baseline
-  (≈ ≥ 22 MHz). If NO-GO, record the finding in `decoder_roadmap.md`, mark this
-  change shelved (M2-style), and stop after task 4.1.
+  RESULT (`turbo_decoder_de2`, all three levers on): restricted Fmax **27.63 MHz**
+  (vs 14.25 baseline = **1.94×**); LE **11,164** (vs 12,759 baseline — LOWER,
+  anchor-norm drops the 8-way max-tree); M4K 162,206 bits unchanged. Worst path is
+  the δ-fold stage-B (`d1_r → tree → sat_sub → xe_r`); the α/β recurrence is no
+  longer the limiter. (Intermediate probes: anchor+tree only = 19.14 MHz;
+  off-by-one δ-pipe probe = 26.31 MHz.)
+- [x] 1.4 **GATE: GO.** 1.94× ≥ 1.5× — proceed to stages 2/3.
 
 ## 2. Bit-exactness (post-GO)
 
@@ -57,12 +61,19 @@ common case (no new reference).
 
 ## 3. Integrate + fit at the measured clock (post-GO)
 
-- [ ] 3.1 Full regression: all TX lanes + decoder lanes + the Octave suite green.
-- [ ] 3.2 Quartus II 13.0sp1 fit `turbo_decoder_de2` at the highest PLL the
-  stage-1 Fmax supports (e.g. 25 MHz); record Fmax / LE / M4K vs the 12.5 MHz
-  baseline. Self-check + LCD demo unchanged; only the PLL ratio moves.
+- [x] 3.1 Decoder lanes green with the levers enabled (constituent_decoder
+  27/27, turbo_decoder_top 10+10 both MAX_ITER groups, all bit-exact vs the SAME
+  golden vectors) + the DE2 self-check lane PASS on the ÷2 sim PLL with all three
+  levers on; `hdl/vectors/*` byte-identical. (Stage 1/1c already regressed the
+  full decoder + TX suites on the merged RTL.)
+- [x] 3.2 Quartus II 13.0sp1 fit `turbo_decoder_de2` at **25 MHz** (new ÷2 PLL
+  `pll_25`, replacing the ÷4 `pll_12p5`). Timing CLOSES: worst setup slack
+  **+9.899 ns** @ 40 ns, restricted Fmax **33.22 MHz**. LE **11,194** (vs 12,759
+  @ 12.5 MHz baseline — lower), M4K 162,206 bits unchanged, 1 PLL. `.sof`
+  produced. Self-check + LCD demo unchanged; only the PLL ratio + the three
+  lever generics moved.
 - [ ] 3.3 On-board re-confirm (HARDWARE-GATED — user's board): the existing
-  `PASS e=000 it=2` decoder self-check still passes at the faster clock.
+  `PASS e=000 it=2` decoder self-check still passes at the faster 25 MHz clock.
 
 ## 4. Validate
 
