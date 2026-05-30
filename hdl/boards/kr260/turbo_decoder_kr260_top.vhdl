@@ -382,7 +382,7 @@ begin
                     frame_err <= '1';
                   end if;
                   if (core_cout = exp_bit(cmp_idx)) and (err_cnt = 0)
-                     and (core_ol = '1') then
+                     and (core_ol = '1') and (frame_err = '0') then
                     pass_f <= '1';
                     done_f <= '1';
                     chk    <= CH_PASS;

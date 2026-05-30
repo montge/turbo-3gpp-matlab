@@ -8,15 +8,16 @@
 #
 # What's pinned here:
 #   1. PL clock period (100 MHz / 10 ns). The clock physically comes from the
-#      zynq_ultra_ps_e PS via the BD, so the clock object should be auto-
+#      zynq_ultra_ps_e PS via the BD, so the clock object is normally auto-
 #      created by the Vivado IP integrator when the BD is added. We add an
-#      EXPLICIT create_clock as a belt-and-suspenders -- in some Vivado
-#      versions the PS's pl_clk0 only gets a derived clock from the upstream
-#      PSU clock if implementation can see the PSU constraints, so an
-#      explicit constraint on the BD wrapper's pl_clk0 output ensures synth
-#      and impl both see the constraint regardless of clock-derivation order.
-#      If Vivado warns that the explicit clock conflicts with the IP-declared
-#      one, comment OUT the create_clock below and rely on the IP definition.
+#      EXPLICIT create_clock only as a FALLBACK -- guarded so it fires solely
+#      when no clock already exists on the pl_clk0 pin. Defining a second clock
+#      on the same source pin (when the PS IP already constrained it) triggers
+#      a "redefining clock" critical warning and can mis-constrain timing on
+#      the one clock the demo is signed off against, so we never do it
+#      unconditionally. In Vivado versions where the PSU constraint is absent
+#      (no IP-declared clock on pl_clk0) the guard lets our explicit constraint
+#      through so synth and impl still see a 10 ns period.
 #   2. The two user LEDs (LEDS[0] / LEDS[1]) at the K26 SOM som240_1_d13 /
 #      som240_1_d14 pins -- which the kr260_som part0_pins -> kr260_carrier
 #      connection_map resolves to FPGA pins F8 / E8 respectively, both
@@ -32,9 +33,15 @@
 # existing yet (e.g. during OOC sub-runs where this XDC is read but the BD is
 # absent); without the guard, Vivado treats a missing object as a constraint
 # error and fails the run.
-if {[llength [get_pins -quiet -hierarchical -filter {NAME =~ */pl_clk0}]] > 0} {
-    create_clock -name pl_clk0 -period 10.000 \
-        [get_pins -hierarchical -filter {NAME =~ */pl_clk0}]
+set pl_clk0_pin [get_pins -quiet -hierarchical -filter {NAME =~ */pl_clk0}]
+if {[llength $pl_clk0_pin] > 0} {
+    # Only define a clock if the PS IP has NOT already constrained pl_clk0.
+    # A second create_clock on the same pin would conflict with the IP clock.
+    if {[llength [get_clocks -quiet -of_objects $pl_clk0_pin]] == 0} {
+        create_clock -name pl_clk0 -period 10.000 $pl_clk0_pin
+    } else {
+        puts "INFO: pl_clk0 already constrained by the PS IP; skipping explicit create_clock."
+    }
 }
 
 # -----------------------------------------------------------------------------
