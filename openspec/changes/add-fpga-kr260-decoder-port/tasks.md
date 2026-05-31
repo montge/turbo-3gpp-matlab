@@ -72,22 +72,32 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
 - [x] 3.2 Write the `.xdc`: PL clock period constraint + LED/reset LOC +
   IOSTANDARD, with pin LOCs **confirmed against the KR260 board documentation**
   (do not guess — the DE2 pin-table discipline). **DONE:**
-  `hdl/boards/kr260/turbo_decoder_kr260.xdc`. `create_clock -name pl_clk0
-  -period 10.000` on the BD wrapper's pl_clk0 pin (belt-and-suspenders vs the
-  IP-declared clock; guarded by `[llength [get_pins -quiet ...]]>0` so the
-  same xdc is harmless in OOC sub-runs); `LEDS[0]` → pin F8 LVCMOS18 (User_led
-  [0] = som240_1_d13), `LEDS[1]` → pin E8 LVCMOS18 (User_led[1] = som240_1_d14)
-  from the kr260_carrier connection_map → kr260_som part0_pins. No
-  set_false_paths needed (no async top-level inputs).
+  `hdl/boards/kr260/turbo_decoder_kr260.xdc`. NO `create_clock` — the
+  `zynq_ultra_ps_e` IP auto-generates `clk_pl_0` @ 100 MHz and timing closes
+  against it (an explicit clock is redundant, and XDC forbids the `if` needed
+  to guard it — it raised a Designutils 20-1307 critical warning, since removed
+  in #99). `LEDS[0]` → pin F8 LVCMOS18 (User_led[0] = som240_1_d13), `LEDS[1]`
+  → pin E8 LVCMOS18 (User_led[1] = som240_1_d14) from the kr260_carrier
+  connection_map → kr260_som part0_pins; DRC passed (0 errors) but the LOCs are
+  still pending physical confirmation on-board at stage 5. No set_false_paths
+  needed (no async top-level inputs).
 - [ ] 3.3 A KR260 self-check **GHDL/cocotb sim lane** (template: the DE2 self-
   check lane with the PLL sim model replaced by a plain divided/again clock)
   reaches the PASS verdict on the golden vector and FAIL on a corrupt index.
 
 ## 4. Vivado synth + impl + timing
 
-- [ ] 4.1 Run Vivado synth + implementation to a `.bit`; **timing closes**
+- [x] 4.1 Run Vivado synth + implementation to a `.bit`; **timing closes**
   (non-negative WNS at the PL clock); record LUT/FF/BRAM/DSP + WNS + achieved
   Fmax (vs the DE2's ~28 MHz). (Parent drives the long build, per the DE2 lesson.)
+  **DONE (parent-driven `-mode bitstream`, Vivado 2025.2.1):** `.bit` at
+  `build/kr260/proj/kr260_demo.runs/impl_1/turbo_decoder_kr260_top.bit`.
+  **Timing CLOSES at 100 MHz: WNS +0.836 ns** (clk_pl_0, 0/5029 failing
+  endpoints; WHS +0.017, WPWS +4.238) → achieved Fmax ≈ **109 MHz** (vs DE2
+  ~28 MHz). Utilization: **7,052 LUT (6.0%)**, 1,986 FF (0.85%), **9 BRAM
+  (6.25%** — 3×RAMB36E2 + 12×RAMB18E2, all inferred), **0 DSP**, 2 IOB.
+  Build is **0 errors / 0 critical warnings** (after the #99 XDC fix), DRC
+  clean.
 
 ## 5. On-board (HARDWARE-GATED — user's KR260)
 
