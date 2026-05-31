@@ -78,3 +78,7 @@ hdl/boards/kr260/.Xil/
 hdl/boards/kr260/*.jou
 hdl/boards/kr260/*.log
 hdl/boards/kr260/dfx_runtime.txt
+
+# Claude Code agent worktrees -- local scratch checkouts, never committed.
+# (.claude/commands and .claude/skills ARE tracked; only worktrees are scratch.)
+.claude/worktrees/
