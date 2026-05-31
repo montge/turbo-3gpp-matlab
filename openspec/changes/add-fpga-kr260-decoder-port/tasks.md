@@ -81,9 +81,17 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
   connection_map → kr260_som part0_pins; DRC passed (0 errors) but the LOCs are
   still pending physical confirmation on-board at stage 5. No set_false_paths
   needed (no async top-level inputs).
-- [ ] 3.3 A KR260 self-check **GHDL/cocotb sim lane** (template: the DE2 self-
+- [x] 3.3 A KR260 self-check **GHDL/cocotb sim lane** (template: the DE2 self-
   check lane with the PLL sim model replaced by a plain divided/again clock)
   reaches the PASS verdict on the golden vector and FAIL on a corrupt index.
+  **DONE:** `hdl/sim/turbo_decoder_kr260/` (Makefile + `test_turbo_decoder_kr260.py`
+  + `test_runner.py`) and `hdl/boards/kr260/kr260_clocking_wrapper_sim.vhdl` (the
+  self-clocking stub for the absent zynq_ultra_ps_e PS block). The KR260 top has
+  NO clock/done port (only `LEDS`), so the stub self-generates `pl_clk0` and the
+  test polls the encoded LEDs with `-gRUN_HOLD_CYC_OVR=8` (so the latched verdict
+  is visible before the ~1.5 s board run-hold). `test_runner.py` passes BOTH
+  cases: CORRUPT_IDX=-1 → **PASS**, CORRUPT_IDX=7 → **FAIL**. Auto-discovered by
+  `scripts/run_all_hdl_lanes.sh` (no CI change needed).
 
 ## 4. Vivado synth + impl + timing
 
@@ -101,13 +109,23 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
 
 ## 5. On-board (HARDWARE-GATED — user's KR260)
 
-- [ ] 5.1 Download the `.bit` over the FT4232H JTAG (Vivado Hardware Manager);
+- [x] 5.1 Download the `.bit` over the FT4232H JTAG (Vivado Hardware Manager);
   confirm the PASS LED lights (a corrupt build shows FAIL); exercise the re-run
-  control.
+  control. **DONE — ON-BOARD PASS (2026-05-31):** programmed via
+  `program_kr260.tcl` (JTAG chain `xck26_0 arm_dap_1`, "End of startup status:
+  HIGH"); `LEDS(0)` solid on + `LEDS(1)` off = **PASS** — the on-board
+  `turbo_decoder_top` decoded the K=512 golden vector bit-for-bit at 100 MHz.
+  This also confirms the F8/E8 LED LOCs are correct. Re-run is single-shot per
+  power-cycle for v1 (no PL push-button on the carrier).
 
 ## 6. Docs + validate
 
-- [ ] 6.1 KR260 demo README (build TCL usage, JTAG download steps, LED meaning);
+- [x] 6.1 KR260 demo README (build TCL usage, JTAG download steps, LED meaning);
   update `project_fpga_toolchain.md` with the confirmed Vivado/board specifics.
+  **DONE:** `hdl/boards/kr260/turbo_decoder_kr260_README.md` (target/toolchain,
+  PS clocking BD, two-LED encoding, build TCL modes, JTAG program steps, sim
+  lane, and the on-board PASS + timing/util results); FPGA-toolchain +
+  HDL-progress memory updated with the confirmed Vivado 2025.2.1 / KR260
+  specifics and the on-board PASS.
 - [ ] 6.2 `npx openspec validate --all --strict` passes; archive when on-board
   PASS is confirmed.
