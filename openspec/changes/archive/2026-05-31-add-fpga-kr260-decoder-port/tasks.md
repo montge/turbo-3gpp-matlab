@@ -127,5 +127,7 @@ pin, the Zynq clocking decision (§3), and the bring-up gotchas (§4/§7).
   lane, and the on-board PASS + timing/util results); FPGA-toolchain +
   HDL-progress memory updated with the confirmed Vivado 2025.2.1 / KR260
   specifics and the on-board PASS.
-- [ ] 6.2 `npx openspec validate --all --strict` passes; archive when on-board
-  PASS is confirmed.
+- [x] 6.2 `npx openspec validate --all --strict` passes; archive when on-board
+  PASS is confirmed. **DONE:** validate `--all --strict` → 35/35; on-board PASS
+  confirmed (5.1); change archived with its delta synced to
+  `openspec/specs/fpga-kr260-decoder-port/`.
